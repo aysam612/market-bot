@@ -45,11 +45,12 @@ def send_welcome(message):
     markup.add(btn_buy, btn_channel, btn_lang)
     
     welcome_text = (
-        "🤖 **بوت متجر X9 لأرقام تليجرام المميزة** 🌐\n\n"
-        "• احصل على أرقام مميزة عبر نجوم تليجرام ⭐.\n"
-        "• الشراء فوري وآمن بالنجوم.\n\n"
-        f"🆔 ID: `{user_id}`\n\n"
-        "اختر من القائمة 👇"
+        "أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
+        "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
+        "• الشراء فوري وعشوائي وسريع عبر نجوم تليجرام (⭐ Stars).\n"
+        "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
+        f"🆔 معرفك الشخصي: `{user_id}`\n\n"
+        "اختر ما يناسبك من القائمة 👇"
     )
     
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup, parse_mode="Markdown")
@@ -92,8 +93,8 @@ def callback_query(call):
                 title="شراء رقم أمريكي مميز - X9",
                 description="⚠️ تنبيه هام: لو سجلت خروج من الحساب بعد استلامه لن يتم تعويضك بأي شكل.",
                 invoice_payload=f"buy_usa_number_{chosen_num_id}",
-                provider_token="",  # فارغ لنجوم تليجرام (XTR)
-                currency="XTR",     # عملة نجوم تليجرام
+                provider_token="",  
+                currency="XTR",     
                 prices=prices,
                 start_parameter=f"buy-number-{chosen_num_id}"
             )
@@ -108,11 +109,12 @@ def callback_query(call):
         markup.add(btn_buy, btn_channel, btn_lang)
         
         welcome_text = (
-            "🤖 **بوت متجر X9 لأرقام تليجرام المميزة** 🌐\n\n"
-            "• احصل على أرقام مميزة عبر نجوم تليجرام ⭐.\n"
-            "• الشراء فوري وآمن بالنجوم.\n\n"
-            f"🆔 ID: `{user_id}`\n\n"
-            "اختر من القائمة 👇"
+            "أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
+            "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
+            "• الشراء فوري وعشوائي وسريع عبر نجوم تليجرام (⭐ Stars).\n"
+            "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
+            f"🆔 معرفك الشخصي: `{user_id}`\n\n"
+            "اختر ما يناسبك من القائمة 👇"
         )
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=welcome_text, reply_markup=markup, parse_mode="Markdown")
 
@@ -124,7 +126,6 @@ def callback_query(call):
             bot.answer_callback_query(call.id, text="هذا الرقم ليس ملكاً لك!", show_alert=True)
             return
 
-        # تنبيه البوب أب عشان نعرفه إنه جاري جلب الكود (بدون ما يعطي خطأ لو ضغطت متكرر)
         bot.answer_callback_query(call.id, text="🔄 جاري جلب الكود وتحديث الرسالة...")
 
         code_result = fetch_otp_on_demand(data["session"], data["api_id"], data["api_hash"])
@@ -156,7 +157,7 @@ def callback_query(call):
         btn_channel = types.InlineKeyboardButton("📢 X9 Channel", url=CHANNEL_URL)
         btn_lang = types.InlineKeyboardButton("🌐 تغيير إلى العربية", callback_data="main_menu")
         markup.add(btn_buy, btn_channel, btn_lang)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"🤖 **X9 Telegram Numbers Bot**\n\n• Get premium numbers using Telegram Stars ⭐\n• Instant and secure purchase\n\n🆔 ID: `{user_id}`\n\nChoose from the menu 👇", reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"Welcome to X9 Store 🌐\n\n• Get USA numbers using Telegram Stars ⭐\n• Instant purchase\n\n🆔 ID: `{user_id}`\n\nChoose from the menu 👇", reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "categories_menu_en":
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -264,6 +265,6 @@ def fetch_otp_on_demand(session_str, api_id, api_hash):
         return f"خطأ بالاتصال: {str(e)}"
 
 if __name__ == '__main__':
-    print("Starting X9 Bot with Full Features and Repeatable OTP...")
+    print("Starting X9 Bot (Fully Merged Version)...")
     bot.remove_webhook()
     bot.infinity_polling()
