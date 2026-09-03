@@ -38,7 +38,17 @@ def send_welcome(message):
     btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="buy_numbers")
     btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
     markup.add(btn_buy, btn_lang)
-    bot.send_message(message.chat.id, f"بوت أرقام تليجرام المميزة\n\n• احصل على أرقام مميزة عبر نجوم تليجرام الرسمية ⭐\n• الشراء فوري وآمن بالنجوم\n\n🆔 ID: `{user_id}`\n\nاختر من القائمة 👇", reply_markup=markup, parse_mode="Markdown")
+    
+    welcome_text = (
+        "👋 أهلاً بك عزيزي في متجر أرقام تليجرام المميزة 🌐!\n\n"
+        "• احصل على أرقام مميزة ومفعلة لجميع الاستخدامات.\n"
+        "• الشراء فوري وسريع عبر **نجوم تليجرام (Stars ⭐)**.\n"
+        "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
+        f"🆔 معرفك الشخصي: `{user_id}`\n\n"
+        "اختر ما يناسبك من القائمة 👇"
+    )
+    
+    bot.send_message(message.chat.id, welcome_text, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
@@ -51,7 +61,7 @@ def callback_query(call):
         for num_id, data in NUMBERS_STORE.items():
             if not data["sold"]:
                 available_count += 1
-                markup.add(types.InlineKeyboardButton(f"🇺🇸 رقم أمريكي ({num_id}) - 44 نجمة ⭐", callback_data=f"getnum_{num_id}"))
+                markup.add(types.InlineKeyboardButton(f"🌐 رقم متاح (#{num_id}) - 44 نجمة ⭐", callback_data=f"getnum_{num_id}"))
         
         if available_count == 0:
             markup.add(types.InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
@@ -67,7 +77,16 @@ def callback_query(call):
         btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="buy_numbers")
         btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
         markup.add(btn_buy, btn_lang)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"بوت أرقام تليجرام المميزة\n\n• احصل على أرقام مميزة عبر نجوم تليجرام الرسمية ⭐\n• الشراء فوري وآمن بالنجوم\n\n🆔 ID: `{user_id}`\n\nاختر من القائمة 👇", reply_markup=markup, parse_mode="Markdown")
+        
+        welcome_text = (
+            "👋 أهلاً بك عزيزي في متجر أرقام تليجرام المميزة 🌐!\n\n"
+            "• احصل على أرقام مميزة ومفعلة لجميع الاستخدامات.\n"
+            "• الشراء فوري وسريع عبر **نجوم تليجرام (Stars ⭐)**.\n"
+            "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
+            f"🆔 معرفك الشخصي: `{user_id}`\n\n"
+            "اختر ما يناسبك من القائمة 👇"
+        )
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=welcome_text, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data.startswith("getnum_"):
         num_id = call.data.split("_")[1]
@@ -81,8 +100,8 @@ def callback_query(call):
             prices = [types.LabeledPrice(label=f"Telegram Number #{num_id}", amount=44)]
             bot.send_invoice(
                 chat_id=call.message.chat.id,
-                title=f"شراء رقم أمريكي مميز #{num_id}",
-                description="رقم أمريكي لاستخدام تليجرام + جلسة خاصة بك وحدك مع إمكانية طلب الكود فوري.",
+                title=f"شراء رقم مميز #{num_id}",
+                description="رقم مميز لاستخدام تليجرام + جلسة خاصة بك وحدك مع إمكانية طلب الكود فوري.",
                 invoice_payload=f"buy_usa_number_{num_id}",
                 provider_token="",  # فارغ لنجوم تليجرام (XTR)
                 currency="XTR",     # عملة نجوم تليجرام
@@ -130,7 +149,7 @@ def callback_query(call):
         for num_id, data in NUMBERS_STORE.items():
             if not data["sold"]:
                 available_count += 1
-                markup.add(types.InlineKeyboardButton(f"🇺🇸 USA number ({num_id}) - 44 Stars ⭐", callback_data=f"getnum_{num_id}"))
+                markup.add(types.InlineKeyboardButton(f"🌐 Number ({num_id}) - 44 Stars ⭐", callback_data=f"getnum_{num_id}"))
         
         if available_count == 0:
             btn_back = types.InlineKeyboardButton("🔙 Back", callback_data="lang_en")
