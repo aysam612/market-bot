@@ -39,10 +39,14 @@ NUMBERS_STORE = {
 def send_welcome(message):
     user_id = message.from_user.id
     markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    # أزرار القائمة الرئيسية (مع إضافة زر ابدأ/Start والخيارات الأخرى)
+    btn_start = types.InlineKeyboardButton("🚀 ابدأ (Start)", callback_data="categories_menu")
     btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="categories_menu")
     btn_channel = types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL)
     btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
-    markup.add(btn_buy, btn_channel, btn_lang)
+    
+    markup.add(btn_start, btn_buy, btn_channel, btn_lang)
     
     welcome_text = (
         "أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
@@ -103,10 +107,11 @@ def callback_query(call):
 
     elif call.data == "main_menu":
         markup = types.InlineKeyboardMarkup(row_width=1)
+        btn_start = types.InlineKeyboardButton("🚀 ابدأ (Start)", callback_data="categories_menu")
         btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="categories_menu")
         btn_channel = types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL)
         btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
-        markup.add(btn_buy, btn_channel, btn_lang)
+        markup.add(btn_start, btn_buy, btn_channel, btn_lang)
         
         welcome_text = (
             "أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
@@ -153,10 +158,11 @@ def callback_query(call):
 
     elif call.data == "lang_en":
         markup = types.InlineKeyboardMarkup(row_width=1)
+        btn_start = types.InlineKeyboardButton("🚀 Start", callback_data="categories_menu_en")
         btn_buy = types.InlineKeyboardButton("🛒 Buy Numbers with Stars ⭐", callback_data="categories_menu_en")
         btn_channel = types.InlineKeyboardButton("📢 X9 Channel", url=CHANNEL_URL)
         btn_lang = types.InlineKeyboardButton("🌐 تغيير إلى العربية", callback_data="main_menu")
-        markup.add(btn_buy, btn_channel, btn_lang)
+        markup.add(btn_start, btn_buy, btn_channel, btn_lang)
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"Welcome to X9 Store 🌐\n\n• Get USA numbers using Telegram Stars ⭐\n• Instant purchase\n\n🆔 ID: `{user_id}`\n\nChoose from the menu 👇", reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "categories_menu_en":
@@ -265,6 +271,6 @@ def fetch_otp_on_demand(session_str, api_id, api_hash):
         return f"خطأ بالاتصال: {str(e)}"
 
 if __name__ == '__main__':
-    print("Starting X9 Bot (Fully Merged Version)...")
+    print("Starting X9 Bot (With Start Button)...")
     bot.remove_webhook()
     bot.infinity_polling()
