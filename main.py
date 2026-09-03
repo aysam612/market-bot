@@ -1,5 +1,6 @@
 import os
 import re
+import random
 import asyncio
 from telebot import types
 import telebot
@@ -9,6 +10,9 @@ from telethon.sessions import StringSession
 # إعدادات البوت الأساسية
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXvSih9YaE")
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# رابط قناتك على تليجرام (قم بتعديل المعرف إذا لزم الأمر)
+CHANNEL_URL = "https://t.me/X9"
 
 # ================= جدول الأرقام المتاحة (رقمين بسعر 44 نجمة حقيقية لكل رقم) =================
 NUMBERS_STORE = {
@@ -35,14 +39,15 @@ NUMBERS_STORE = {
 def send_welcome(message):
     user_id = message.from_user.id
     markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="buy_numbers")
+    btn_buy = types.InlineKeyboardButton("🇺🇸 🛒 شراء رقم أمريكي فوري (عشوائي) - 44 ⭐", callback_data="buy_random_number")
+    btn_channel = types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL)
     btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
-    markup.add(btn_buy, btn_lang)
+    markup.add(btn_buy, btn_channel, btn_lang)
     
     welcome_text = (
-        "👋 أهلاً بك عزيزي في متجر أرقام تليجرام المميزة 🌐!\n\n"
-        "• احصل على أرقام مميزة ومفعلة لجميع الاستخدامات.\n"
-        "• الشراء فوري وسريع عبر **نجوم تليجرام (Stars ⭐)**.\n"
+        "👋 أهلاً بك عزيزي في **متجر X9** للأرقام المميزة 🌐!\n\n"
+        "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
+        "• الشراء فوري وعشوائي وسريع عبر **نجوم تليجرام (Stars ⭐)**.\n"
         "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
         f"🆔 معرفك الشخصي: `{user_id}`\n\n"
         "اختر ما يناسبك من القائمة 👇"
@@ -54,62 +59,51 @@ def send_welcome(message):
 def callback_query(call):
     user_id = call.from_user.id
 
-    if call.data == "buy_numbers":
-        markup = types.InlineKeyboardMarkup(row_width=1)
+    if call.data == "buy_random_number":
+        # تجميع الأرقام المتاحة فقط
+        available_numbers = [num_id for num_id, data in NUMBERS_STORE.items() if not data["sold"]]
         
-        available_count = 0
-        for num_id, data in NUMBERS_STORE.items():
-            if not data["sold"]:
-                available_count += 1
-                markup.add(types.InlineKeyboardButton(f"🇺🇸 رقم أمريكي (#{num_id}) - 44 نجمة ⭐", callback_data=f"getnum_{num_id}"))
-        
-        if available_count == 0:
+        if not available_numbers:
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL))
             markup.add(types.InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="عذراً، نفدت جميع الأرقام من المتجر حالياً 🔴", reply_markup=markup, parse_mode="Markdown")
+            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="عذراً، نفدت جميع الأرقام الأمريكية من متجر X9 حالياً 🔴", reply_markup=markup, parse_mode="Markdown")
             return
 
-        btn_back = types.InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")
-        markup.add(btn_back)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="اختر الرقم المناسب 🌐 (الدفع الحقيقي بنجوم تليجرام)", reply_markup=markup, parse_mode="Markdown")
+        # اختيار رقم عشوائي من الأرقام المتاحة
+        chosen_num_id = random.choice(available_numbers)
+
+        try:
+            prices = [types.LabeledPrice(label=f"USA Number #{chosen_num_id}", amount=44)]
+            bot.send_invoice(
+                chat_id=call.message.chat.id,
+                title=f"🇺🇸 شراء رقم أمريكي مميز - متجر X9",
+                description="رقم أمريكي لاستخدام تليجرام (اختيار عشوائي) + جلسة خاصة بك وحدك مع إمكانية طلب الكود فوري.",
+                invoice_payload=f"buy_usa_number_{chosen_num_id}",
+                provider_token="",  # فارغ لنجوم تليجرام (XTR)
+                currency="XTR",     # عملة نجوم تليجرام
+                prices=prices,
+                start_parameter=f"buy-number-{chosen_num_id}"
+            )
+        except Exception as e:
+            bot.answer_callback_query(call.id, text=f"خطأ في إنشاء الفاتورة: {str(e)}", show_alert=True)
 
     elif call.data == "main_menu":
         markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="buy_numbers")
+        btn_buy = types.InlineKeyboardButton("🇺🇸 🛒 شراء رقم أمريكي فوري (عشوائي) - 44 ⭐", callback_data="buy_random_number")
+        btn_channel = types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL)
         btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
-        markup.add(btn_buy, btn_lang)
+        markup.add(btn_buy, btn_channel, btn_lang)
         
         welcome_text = (
-            "👋 أهلاً بك عزيزي في متجر أرقام تليجرام المميزة 🌐!\n\n"
-            "• احصل على أرقام مميزة ومفعلة لجميع الاستخدامات.\n"
-            "• الشراء فوري وسريع عبر **نجوم تليجرام (Stars ⭐)**.\n"
+            "👋 أهلاً بك عزيزي في **متجر X9** للأرقام المميزة 🌐!\n\n"
+            "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
+            "• الشراء فوري وعشوائي وسريع عبر **نجوم تليجرام (Stars ⭐)**.\n"
             "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
             f"🆔 معرفك الشخصي: `{user_id}`\n\n"
             "اختر ما يناسبك من القائمة 👇"
         )
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=welcome_text, reply_markup=markup, parse_mode="Markdown")
-
-    elif call.data.startswith("getnum_"):
-        num_id = call.data.split("_")[1]
-        data = NUMBERS_STORE.get(num_id)
-        
-        if not data or data["sold"]:
-            bot.answer_callback_query(call.id, text="عذراً، هذا الرقم تم بيعه مسبقاً!", show_alert=True)
-            return
-
-        try:
-            prices = [types.LabeledPrice(label=f"Telegram Number #{num_id}", amount=44)]
-            bot.send_invoice(
-                chat_id=call.message.chat.id,
-                title=f"شراء رقم أمريكي مميز #{num_id}",
-                description="رقم أمريكي لاستخدام تليجرام + جلسة خاصة بك وحدك مع إمكانية طلب الكود فوري.",
-                invoice_payload=f"buy_usa_number_{num_id}",
-                provider_token="",  # فارغ لنجوم تليجرام (XTR)
-                currency="XTR",     # عملة نجوم تليجرام
-                prices=prices,
-                start_parameter=f"buy-number-{num_id}"
-            )
-        except Exception as e:
-            bot.answer_callback_query(call.id, text=f"خطأ في إنشاء الفاتورة: {str(e)}", show_alert=True)
 
     elif call.data.startswith("get_otp_"):
         num_id = call.data.split("_")[2]
@@ -129,7 +123,14 @@ def callback_query(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id, 
                 message_id=call.message.message_id, 
-                text=f"📥 نتيجة جلب الكود للرقم `#{num_id}`\n\n• التفاصيل/الكود : `{code_result}`\n\n*(يمكنك الضغط على زر التحديث بالأسفل لجلب أي كود جديد في أي وقت)*", 
+                text=(
+                    f"📥 **متجر X9** - نتيجة جلب الكود\n\n"
+                    f"• كود التحقق / الرسالة : `{code_result}`\n\n"
+                    f"⚠️ **تنبيه هام جداً:**\n"
+                    f"• إياك ثم إياك عمل (تسجيل خروج / Logout) من الحساب داخل تطبيق تليجرام!\n"
+                    f"• في حال قمت بتسجيل الخروج أو فقدان الحساب، **لا يوجد تعويض نهائياً** ولا يتحمل متجر X9 أي مسؤولية بعد استلام الرقم.\n\n"
+                    f"*(قم بإدخال الكود، واضغط على زر التحديث بالأسفل لجلب أي كود جديد)*"
+                ), 
                 reply_markup=markup, 
                 parse_mode="Markdown"
             )
@@ -138,28 +139,38 @@ def callback_query(call):
 
     elif call.data == "lang_en":
         markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_buy = types.InlineKeyboardButton("🛒 Buy Numbers with Stars ⭐", callback_data="buy_numbers_en")
+        btn_buy = types.InlineKeyboardButton("🇺🇸 🛒 Buy USA Number (Random) - 44 ⭐", callback_data="buy_random_number_en")
+        btn_channel = types.InlineKeyboardButton("📢 X9 Channel", url=CHANNEL_URL)
         btn_lang = types.InlineKeyboardButton("🌐 تغيير إلى العربية", callback_data="main_menu")
-        markup.add(btn_buy, btn_lang)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"Premium Telegram Numbers Bot\n\n• Get premium numbers using Telegram Stars ⭐\n• Instant and secure purchase\n\n🆔 ID: `{user_id}`\n\nChoose from the menu 👇", reply_markup=markup, parse_mode="Markdown")
+        markup.add(btn_buy, btn_channel, btn_lang)
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"Welcome to X9 Store 🌐\n\n• Get USA numbers using Telegram Stars ⭐\n• Instant and secure purchase\n\n🆔 ID: `{user_id}`\n\nChoose from the menu 👇", reply_markup=markup, parse_mode="Markdown")
 
-    elif call.data == "buy_numbers_en":
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        available_count = 0
-        for num_id, data in NUMBERS_STORE.items():
-            if not data["sold"]:
-                available_count += 1
-                markup.add(types.InlineKeyboardButton(f"🇺🇸 USA Number ({num_id}) - 44 Stars ⭐", callback_data=f"getnum_{num_id}"))
+    elif call.data == "buy_random_number_en":
+        available_numbers = [num_id for num_id, data in NUMBERS_STORE.items() if not data["sold"]]
         
-        if available_count == 0:
-            btn_back = types.InlineKeyboardButton("🔙 Back", callback_data="lang_en")
-            markup.add(btn_back)
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Sorry, no numbers available right now 🔴", reply_markup=markup, parse_mode="Markdown")
+        if not available_numbers:
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(types.InlineKeyboardButton("📢 X9 Channel", url=CHANNEL_URL))
+            markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="lang_en"))
+            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Sorry, no USA numbers available right now in X9 🔴", reply_markup=markup, parse_mode="Markdown")
             return
 
-        btn_back = types.InlineKeyboardButton("🔙 Back", callback_data="lang_en")
-        markup.add(btn_back)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Select Country 🌐", reply_markup=markup, parse_mode="Markdown")
+        chosen_num_id = random.choice(available_numbers)
+
+        try:
+            prices = [types.LabeledPrice(label=f"USA Number #{chosen_num_id}", amount=44)]
+            bot.send_invoice(
+                chat_id=call.message.chat.id,
+                title=f"🇺🇸 Buy USA Number - X9 Store",
+                description="Random USA number for Telegram + private session with instant OTP.",
+                invoice_payload=f"buy_usa_number_{chosen_num_id}",
+                provider_token="",
+                currency="XTR",
+                prices=prices,
+                start_parameter=f"buy-number-{chosen_num_id}"
+            )
+        except Exception as e:
+            bot.answer_callback_query(call.id, text=f"Error: {str(e)}", show_alert=True)
 
 @bot.pre_checkout_query_handler(func=lambda query: True)
 def checkout(pre_checkout_query):
@@ -185,8 +196,14 @@ def got_payment(message):
     data["sold"] = True
     data["buyer_id"] = user_id
     
-    # تم إخفاء الرقم تماماً من هذه الرسالة ولن يظهر أبداً
-    reply_text = f"✅ تم دفع 44 نجمة بنجاح واستلام الرقم `#{num_id}`!\n\n• تم إزالة الرقم من المتجر العام ليبقى خاصاً بك وحدك.\n\n• الآن اضغط على زر **طلب الكود** أدناه لمعرفة كود التحقق (OTP) الخاص بتسجيل الدخول."
+    reply_text = (
+        f"🇺🇸 ✅ تم دفع 44 نجمة بنجاح عبر **متجر X9** واستلام رقم أمريكي بنجاح!\n\n"
+        f"• تم إزالة الرقم من المتجر العام ليبقى خاصاً بك وحدك.\n\n"
+        f"⚠️ **تنبيه هــــــــام جداً:**\n"
+        f"• بمجرد استلامك للرقم، **تحمل المسؤولية كاملة**.\n"
+        f"• ممنوع نهائياً عمل (تسجيل خروج / Logout) من الحساب، وفي حال خرجت أو فقدت الحساب **لا يوجد أي تعويض نهائياً** من قِبل متجر X9!\n\n"
+        f"• الآن اضغط على زر **طلب الكود** أدناه لمعرفة كود التحقق (OTP)."
+    )
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_get_code = types.InlineKeyboardButton("🔄 - طلب كود (تحديث)", callback_data=f"get_otp_{num_id}")
@@ -227,6 +244,6 @@ def fetch_otp_on_demand(session_str, api_id, api_hash):
         return f"خطأ بالاتصال: {str(e)}"
 
 if __name__ == '__main__':
-    print("Starting bot with Telegram Stars (XTR) and multiple numbers...")
+    print("Starting X9 Bot with Random USA Numbers and Telegram Stars (XTR)...")
     bot.remove_webhook()
     bot.infinity_polling()
