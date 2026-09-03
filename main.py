@@ -61,7 +61,7 @@ def callback_query(call):
         for num_id, data in NUMBERS_STORE.items():
             if not data["sold"]:
                 available_count += 1
-                markup.add(types.InlineKeyboardButton(f"🌐 رقم متاح (#{num_id}) - 44 نجمة ⭐", callback_data=f"getnum_{num_id}"))
+                markup.add(types.InlineKeyboardButton(f"🇺🇸 رقم أمريكي (#{num_id}) - 44 نجمة ⭐", callback_data=f"getnum_{num_id}"))
         
         if available_count == 0:
             markup.add(types.InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
@@ -100,8 +100,8 @@ def callback_query(call):
             prices = [types.LabeledPrice(label=f"Telegram Number #{num_id}", amount=44)]
             bot.send_invoice(
                 chat_id=call.message.chat.id,
-                title=f"شراء رقم مميز #{num_id}",
-                description="رقم مميز لاستخدام تليجرام + جلسة خاصة بك وحدك مع إمكانية طلب الكود فوري.",
+                title=f"شراء رقم أمريكي مميز #{num_id}",
+                description="رقم أمريكي لاستخدام تليجرام + جلسة خاصة بك وحدك مع إمكانية طلب الكود فوري.",
                 invoice_payload=f"buy_usa_number_{num_id}",
                 provider_token="",  # فارغ لنجوم تليجرام (XTR)
                 currency="XTR",     # عملة نجوم تليجرام
@@ -129,7 +129,7 @@ def callback_query(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id, 
                 message_id=call.message.message_id, 
-                text=f"📥 نتيجة جلب الكود\n\n• الرقم : `{data['phone']}`\n• التفاصيل/الكود : `{code_result}`\n\n*(يمكنك الضغط على زر التحديث بالأسفل لجلب أي كود جديد في أي وقت)*", 
+                text=f"📥 نتيجة جلب الكود للرقم `#{num_id}`\n\n• التفاصيل/الكود : `{code_result}`\n\n*(يمكنك الضغط على زر التحديث بالأسفل لجلب أي كود جديد في أي وقت)*", 
                 reply_markup=markup, 
                 parse_mode="Markdown"
             )
@@ -149,7 +149,7 @@ def callback_query(call):
         for num_id, data in NUMBERS_STORE.items():
             if not data["sold"]:
                 available_count += 1
-                markup.add(types.InlineKeyboardButton(f"🌐 Number ({num_id}) - 44 Stars ⭐", callback_data=f"getnum_{num_id}"))
+                markup.add(types.InlineKeyboardButton(f"🇺🇸 USA Number ({num_id}) - 44 Stars ⭐", callback_data=f"getnum_{num_id}"))
         
         if available_count == 0:
             btn_back = types.InlineKeyboardButton("🔙 Back", callback_data="lang_en")
@@ -185,7 +185,8 @@ def got_payment(message):
     data["sold"] = True
     data["buyer_id"] = user_id
     
-    reply_text = f"✅ تم دفع 44 نجمة بنجاح واستلام الرقم #{num_id}!\n\n• الرقم : `{data['phone']}`\n• وتم إزالة الرقم من المتجر العام ليبقى خاصاً بك وحدك.\n\n• حاول تسجيل الدخول بالرقم في تطبيق تليجرام\nثم اضغط على زر **طلب الكود** أدناه (يمكنك التحديث في أي وقت)"
+    # تم إخفاء الرقم تماماً من هذه الرسالة ولن يظهر أبداً
+    reply_text = f"✅ تم دفع 44 نجمة بنجاح واستلام الرقم `#{num_id}`!\n\n• تم إزالة الرقم من المتجر العام ليبقى خاصاً بك وحدك.\n\n• الآن اضغط على زر **طلب الكود** أدناه لمعرفة كود التحقق (OTP) الخاص بتسجيل الدخول."
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_get_code = types.InlineKeyboardButton("🔄 - طلب كود (تحديث)", callback_data=f"get_otp_{num_id}")
