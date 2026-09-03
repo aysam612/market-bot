@@ -11,8 +11,9 @@ from telethon.sessions import StringSession
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXvSih9YaE")
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# رابط قناتك الرسمية على تليجرام
+# إعدادات قناة الاشتراك الإجباري
 CHANNEL_URL = "https://t.me/VPP8P"
+CHANNEL_USERNAME = "@VPP8P"  # معرف القناة
 
 # ================= جدول الأرقام المتاحة (رقمين بسعر 44 نجمة لكل رقم) =================
 NUMBERS_STORE = {
@@ -35,15 +36,22 @@ NUMBERS_STORE = {
 }
 # ==============================================================================================
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    user_id = message.from_user.id
+# دالة للتحقق من اشتراك المستخدم في القناة
+def check_subscription(user_id):
+    try:
+        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        if member.status in ['member', 'administrator', 'creator']:
+            return True
+        return False
+    except Exception:
+        return True
+
+# رسالة القائمة الرئيسية للبوت
+def send_main_menu(chat_id, user_id, message_id=None, is_edit=False):
     markup = types.InlineKeyboardMarkup(row_width=1)
-    
     btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="categories_menu")
     btn_channel = types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL)
     btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
-    
     markup.add(btn_buy, btn_channel, btn_lang)
     
     welcome_text = (
@@ -56,11 +64,52 @@ def send_welcome(message):
         "اختر ما يناسبك من القائمة 👇"
     )
     
-    bot.send_message(message.chat.id, welcome_text, reply_markup=markup, parse_mode="Markdown")
+    if is_edit:
+        try:
+            bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=welcome_text, reply_markup=markup, parse_mode="Markdown")
+        except Exception:
+            bot.send_message(chat_id, welcome_text, reply_markup=markup, parse_mode="Markdown")
+    else:
+        bot.send_message(chat_id, welcome_text, reply_markup=markup, parse_mode="Markdown")
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    user_id = message.from_user.id
+    
+    # فحص الاشتراك الإجباري
+    if not check_subscription(user_id):
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        btn_channel = types.InlineKeyboardButton("📢 اشترك في قناة المتجر", url=CHANNEL_URL)
+        btn_check = types.InlineKeyboardButton("✅ تحقق من الاشتراك", callback_data="check_sub")
+        markup.add(btn_channel, btn_check)
+        
+        bot.send_message(
+            message.chat.id, 
+            "⚠️ **عذراً عزيزي!**\n\n"
+            "للاستفادة من خدمات متجر X9 وشراء الأرقام، يجب عليك الاشتراك في قناة المتجر أولاً 👇", 
+            reply_markup=markup, 
+            parse_mode="Markdown"
+        )
+        return
+
+    send_main_menu(message.chat.id, user_id)
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
+
+    if call.data == "check_sub":
+        if check_subscription(user_id):
+            bot.answer_callback_query(call.id, text="✅ شكراً لاشتراكك! تم فتح البوت بنجاح.", show_alert=True)
+            send_main_menu(call.message.chat.id, user_id, message_id=call.message.message_id, is_edit=True)
+        else:
+            bot.answer_callback_query(call.id, text="❌ لم تقم بالاشتراك في القناة بعد! اشترك ثم اضغط تحقق.", show_alert=True)
+        return
+
+    # الحماية: التحقق من الاشتراك قبل تنفيذ أي زر
+    if not check_subscription(user_id):
+        bot.answer_callback_query(call.id, text="⚠️ يجب عليك الاشتراك في قناة المتجر أولاً!", show_alert=True)
+        return
 
     if call.data == "categories_menu":
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -105,22 +154,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id, text=f"خطأ في إنشاء الفاتورة: {str(e)}", show_alert=True)
 
     elif call.data == "main_menu":
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="categories_menu")
-        btn_channel = types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL)
-        btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
-        markup.add(btn_buy, btn_channel, btn_lang)
-        
-        welcome_text = (
-            "أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
-            "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
-            "• الشراء فوري وعشوائي وسريع عبر نجوم تليجرام (⭐ Stars).\n"
-            "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
-            f"🆔 معرفك الشخصي: `{user_id}`\n"
-            "👑 المالك / المطور: @diddy0\n\n"
-            "اختر ما يناسبك من القائمة 👇"
-        )
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=welcome_text, reply_markup=markup, parse_mode="Markdown")
+        send_main_menu(call.message.chat.id, user_id, message_id=call.message.message_id, is_edit=True)
 
     elif call.data.startswith("get_otp_"):
         num_id = call.data.split("_")[2]
@@ -269,7 +303,6 @@ def fetch_otp_on_demand(session_str, api_id, api_hash):
         return f"خطأ بالاتصال: {str(e)}"
 
 if __name__ == '__main__':
-    print("Starting X9 Bot (With @diddy0 Owner Tag)...")
+    print("Starting X9 Bot (With Force Subscription Enabled)...")
     bot.remove_webhook()
     bot.infinity_polling()
-
