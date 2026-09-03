@@ -6,10 +6,12 @@ import telebot
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
+# إعدادات البوت والسيشن
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXvSih9YaE")
 bot = telebot.TeleBot(BOT_TOKEN)
 
-SESSION_STRING = os.environ.get("SESSION_STRING", "")
+# السيشن الخاصة بك (يمكنك وضعها هنا مباشرة أو عبر المتغيرات في ريلواي)
+SESSION_STRING = os.environ.get("SESSION_STRING", "1AZWarzYBu4DsJhY23nLFER2qDvE9lqCBXrQ27HVWKLqXChIJflm3zoBMhdsya9NdpEfChtBNOBW7PLtdyciAT5rXmZKBC7ky85O3NzH_DWwHs-K_Jrqal9vPyPawIjgq0S3wEumn2ntGrXL3sZObdteRHVh5M-1mdnW7_vIa7W3DQk00P_k7e595JFTtY0kvbC5CeI4yTswQ0ZFxBDgMtH099iKenqtEB6K3-somzxxNiZaPTMl_XYJCNmaBfOA_f-tIb_I1jjekQ-hVeKLh9d5hP2b-05rH1cuqb92EZGWMNm6Wy3KW86nGC7ShF3Cum5yoYlwbj-By4R8XlI3otfuyOvFz5Io=")
 API_ID = int(os.environ.get("API_ID", 34198296))
 API_HASH = os.environ.get("API_HASH", "8b007a14ebc08f01120d0ebs8ba4d595")
 PHONE_NUMBER = "+13025060244"
@@ -52,20 +54,30 @@ def callback_query(call):
 
     elif call.data == "pay_stars_1":
         user_purchased_numbers[user_id] = PHONE_NUMBER
-        reply_text = f"✅ تم استلام الرقم بنجاح!\n\n• الرقم : `{PHONE_NUMBER}`\n\n• حاول تسجيل الدخول بالرقم في تطبيق تليجرام\nثم اضغط على زر **- طلب كود** أدناه"
+        reply_text = f"✅ تم استلام الرقم بنجاح!\n\n• الرقم : `{PHONE_NUMBER}`\n\n• حاول تسجيل الدخول بالرقم في تطبيق تليجرام\nثم اضغط على زر **طلب الكود** أدناه (يمكنك التحديث في أي وقت)"
         markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_get_code = types.InlineKeyboardButton("- طلب كود", callback_data="get_otp")
+        btn_get_code = types.InlineKeyboardButton("🔄 - طلب كود (تحديث)", callback_data="get_otp")
         markup.add(btn_get_code)
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=reply_text, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "get_otp":
-        # جلب الكود فوراً عند الضغط باستخدام الجلسة
+        # جلب الكود فوراً باستخدام السيشن المدمجة وتحديث الرسالة
         code_result = fetch_otp_on_demand()
         
         markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_get_code = types.InlineKeyboardButton("- طلب كود", callback_data="get_otp")
+        btn_get_code = types.InlineKeyboardButton("🔄 - طلب كود (تحديث)", callback_data="get_otp")
         markup.add(btn_get_code)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"📥 نتيجة جلب الكود\n\n• الرقم : `{PHONE_NUMBER}`\n• التفاصيل/الكود : `{code_result}`", reply_markup=markup, parse_mode="Markdown")
+        
+        try:
+            bot.edit_message_text(
+                chat_id=call.message.chat.id, 
+                message_id=call.message.message_id, 
+                text=f"📥 نتيجة جلب الكود\n\n• الرقم : `{PHONE_NUMBER}`\n• التفاصيل/الكود : `{code_result}`\n\n*(يمكنك الضغط على زر التحديث بالأسفل لجلب أي كود جديد في أي وقت)*", 
+                reply_markup=markup, 
+                parse_mode="Markdown"
+            )
+        except Exception:
+            bot.answer_callback_query(call.id, text=f"الكود الحالي: {code_result}")
 
     elif call.data == "lang_en":
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -82,19 +94,22 @@ def callback_query(call):
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Select Country 🌐", reply_markup=markup, parse_mode="Markdown")
 
 def fetch_otp_on_demand():
-    """دالة تتصل لحظياً باستخدام الجلسة وتجلب أحدث رسالة من تليجرام"""
+    """دالة تتصل لحظياً باستخدام الجلسة المحفوظة وتجلب أحدث رسالة من تليجرام"""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         async def main():
+            if not SESSION_STRING:
+                return "خطأ: لم يتم ضبط السيشن بشكل صحيح ❌"
+                
             client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
             await client.connect()
             if not await client.is_user_authorized():
                 await client.disconnect()
                 return "الجلسة غير صالحة أو منتهية ❌"
             
-            # جلب آخر الرسائل من رقم الخدمة الرسمي 777000 أو الدردشة مع تليجرام
+            # جلب آخر رسالة من رقم الخدمة الرسمي 777000
             messages = await client.get_messages(777000, limit=1)
             if not messages:
                 await client.disconnect()
@@ -114,4 +129,6 @@ def fetch_otp_on_demand():
         return f"خطأ بالاتصال: {str(e)}"
 
 if __name__ == '__main__':
+    print("Starting bot...")
+    bot.remove_webhook()
     bot.infinity_polling()
