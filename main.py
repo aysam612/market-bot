@@ -13,7 +13,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 API_ID = int(os.environ.get("API_ID", 33650280))
 API_HASH = os.environ.get("API_HASH", "0d2eeef5980251c6cce7389fc3b0f5d2")
-PHONE_NUMBER = "+16576954958"
+PHONE_NUMBER = "+13025060244"
 
 active_otps = {}
 user_purchased_numbers = {}
