@@ -11,8 +11,8 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXv
 bot = telebot.TeleBot(BOT_TOKEN)
 
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
-API_ID = int(os.environ.get("API_ID", 33650280))
-API_HASH = os.environ.get("API_HASH", "0d2eeef5980251c6cce7389fc3b0f5d2")
+API_ID = int(os.environ.get("API_ID", 34198296))
+API_HASH = os.environ.get("API_HASH", "8b007a14ebc08f01120d0ebs8ba4d595")
 PHONE_NUMBER = "+13025060244"
 
 active_otps = {}
@@ -61,11 +61,11 @@ def callback_query(call):
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=reply_text, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "get_otp":
-        code = active_otps.get(PHONE_NUMBER, "لم يتم العثور على كود بعد . ⏳")
+        code = active_otps.get(PHONE_NUMBER, "لم يتم العثور على كود بعد . ⏳ حاول مجدداً بعد قليل")
         markup = types.InlineKeyboardMarkup(row_width=1)
         btn_get_code = types.InlineKeyboardButton("- طلب كود", callback_data="get_otp")
         markup.add(btn_get_code)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"📥 تم جلب كود جديد\n\n• الرقم : `{PHONE_NUMBER}`\n• الكود : `{code}`", reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"📥 حالة الكود الحالي\n\n• الرقم : `{PHONE_NUMBER}`\n• الكود : `{code}`", reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "lang_en":
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -86,20 +86,32 @@ def start_telegram_listener():
     asyncio.set_event_loop(loop)
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-    @client.on(events.NewMessage(chats=('Telegram', 777000)))
+    @client.on(events.NewMessage)
     async def otp_listener(event):
-        msg_text = event.message.message
-        codes = re.findall(r'\b\d{5,6}\b', msg_text)
-        if codes:
-            active_otps[PHONE_NUMBER] = codes[0]
-        else:
-            active_otps[PHONE_NUMBER] = msg_text
+        try:
+            msg_text = event.message.message
+            sender = await event.get_sender()
+            sender_id = getattr(sender, 'id', None)
+            
+            print(f"Received message from ID: {sender_id} | Text: {msg_text}")
+            
+            # فحص إذا كانت الرسالة من تليجرام أو تحتوي على رمز تحقق
+            if sender_id == 777000 or "login" in msg_text.lower() or "code" in msg_text.lower() or "كود" in msg_text:
+                codes = re.findall(r'\b\d{5,6}\b', msg_text)
+                if codes:
+                    active_otps[PHONE_NUMBER] = codes[0]
+                    print(f"Captured OTP successfully: {codes[0]}")
+                else:
+                    active_otps[PHONE_NUMBER] = msg_text
+        except Exception as e:
+            print(f"Error in listener: {e}")
 
     try:
         client.start(phone=PHONE_NUMBER)
+        print("Telethon Client is running and listening...")
         client.run_until_disconnected()
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Telethon Error: {e}")
 
 if __name__ == '__main__':
     t = threading.Thread(target=start_telegram_listener)
