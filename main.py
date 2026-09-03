@@ -13,7 +13,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 API_ID = int(os.environ.get("API_ID", 33650280))
 API_HASH = os.environ.get("API_HASH", "0d2eeef5980251c6cce7389fc3b0f5d2")
-PHONE_NUMBER = os.environ.get("PHONE_NUMBER", "+16576954958")
+PHONE_NUMBER = "+16576954958"
 
 active_otps = {}
 user_purchased_numbers = {}
@@ -65,7 +65,7 @@ def callback_query(call):
         markup = types.InlineKeyboardMarkup(row_width=1)
         btn_get_code = types.InlineKeyboardButton("- طلب كود", callback_data="get_otp")
         markup.add(btn_get_code)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"📥 تم جلب كود جديد\n\n• الرقم : `{PHONE_NUMBER}`\n• الكود : `{code}`\n\n⚠️ تحقق بخطوتين: 0000", reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"📥 تم جلب كود جديد\n\n• الرقم : `{PHONE_NUMBER}`\n• الكود : `{code}`", reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "lang_en":
         markup = types.InlineKeyboardMarkup(row_width=1)
