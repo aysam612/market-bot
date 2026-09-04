@@ -195,7 +195,7 @@ async def buy_with_balance(callback: CallbackQuery):
     
     otp_text = await fetch_otp_async(session, api_id, api_hash)
     
-    # ⚠️ التحذير بالعربية الفصحى
+    # ⚠️ التحذير بالعربية الفصحى بعد الشراء
     success_msg = (
         f"✅ **تم شراء الرقم بنجاح!**\n\n"
         f"📱 **الرقم:** `{phone}`\n"
@@ -455,6 +455,7 @@ async def fetch_otp_async(session_str, api_id, api_hash):
 
 async def main():
     print("Starting X9 Store Bot...")
+    # تنظيف الويب هوك والاتصالات القديمة فوراً لتجنب خطأ التضارب
     await bot.delete_webhook(drop_pending_updates=True)
     
     commands = [
