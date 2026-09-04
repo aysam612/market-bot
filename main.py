@@ -1,308 +1,306 @@
-import os
-import re
-import random
 import asyncio
-from telebot import types
-import telebot
-from telethon import TelegramClient
-from telethon.sessions import StringSession
+import logging
+import sqlite3
+from datetime import datetime, timedelta
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.filters import Command, CommandStart
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-# إعدادات البوت الأساسية
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXvSih9YaE")
-bot = telebot.TeleBot(BOT_TOKEN)
+# إعدادات البوت والقناة
+TOKEN = "YOUR_BOT_TOKEN_HERE"  # ضع توكن البوت هنا
+CHANNEL_USERNAME = "@VPP8P"    # معرف قناتك الإجبارية
 
-# إعدادات قناة الاشتراك الإجباري
-CHANNEL_URL = "https://t.me/VPP8P"
-CHANNEL_USERNAME = "@VPP8P"  # معرف القناة
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-# ================= جدول الأرقام المتاحة (رقمين بسعر 44 نجمة لكل رقم) =================
-NUMBERS_STORE = {
-    "1": {
-        "phone": "+13025060244",
-        "session": "1AZWarzYBu4DsJhY23nLFER2qDvE9lqCBXrQ27HVWKLqXChIJflm3zoBMhdsya9NdpEfChtBNOBW7PLtdyciAT5rXmZKBC7ky85O3NzH_DWwHs-K_Jrqal9vPyPawIjgq0S3wEumn2ntGrXL3sZObdteRHVh5M-1mdnW7_vIa7W3DQk00P_k7e595JFTtY0kvbC5CeI4yTswQ0ZFxBDgMtH099iKenqtEB6K3-somzxxNiZaPTMl_XYJCNmaBfOA_f-tIb_I1jjekQ-hVeKLh9d5hP2b-05rH1cuqb92EZGWMNm6Wy3KW86nGC7ShF3Cum5yoYlwbj-By4R8XlI3otfuyOvFz5Io=",
-        "api_id": 34198296,
-        "api_hash": "8b007a14ebc08f01120d0ebs8ba4d595",
-        "sold": False,
-        "buyer_id": None
-    },
-    "2": {
-        "phone": "+13649004531",
-        "session": "1AZWarzYBu2uAspmH_zOu7qW53ONrFQw6vhIypDVm5N9LMiUAmBhkON--qPfBcT83HDjTJUeBWNJQ0UELHaLo0xnDnVi3MTm9ZyaGlIO-h5P2LH7OB1jghSFqD_ysUgbUagvN6p8BElr4gmVNO2L5I5sOL52rzHHwbcRCKB-DQvrXH3D7X7yBUXT7UZ8kKs0Ve_926fUoLoUzI1UBvGmdP5Gd8cYHmZJiDjUxFkALKNHlexdJToWLiY-svegkzXGq1ICBjaGGNCMAk__P1-W-HvRv2NbTfX3SDaPFzitNJzqRfxFDf8tysezYXHnzRbBz4cvqEQqcSVrTwvwI6kW7h5uA8Pz2zk0=",
-        "api_id": 34198296,
-        "api_hash": "8b007a14ebc08f01120d0ebs8ba4d595",
-        "sold": False,
-        "buyer_id": None
-    }
-}
-# ==============================================================================================
+# إعداد قاعدة البيانات SQLite
+conn = sqlite3.connect("database.db", check_same_thread=False)
+cursor = conn.cursor()
 
-# دالة للتحقق من اشتراك المستخدم في القناة
-def check_subscription(user_id):
+# إنشاء الجدول إذا لم يكن موجوداً
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    balance INTEGER DEFAULT 0,
+    last_bonus TEXT,
+    referred_by INTEGER
+)
+""")
+conn.commit()
+
+# دالة التحقق من الاشتراك الإجباري
+async def check_subscription(user_id: int) -> bool:
     try:
-        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            return True
-        return False
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        return member.status in ["member", "administrator", "creator"]
     except Exception:
-        return True
+        return False
 
-# رسالة القائمة الرئيسية للبوت
-def send_main_menu(chat_id, user_id, message_id=None, is_edit=False):
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_buy = types.InlineKeyboardButton("🛒 شراء أرقام بالنجوم ⭐", callback_data="categories_menu")
-    btn_channel = types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL)
-    btn_lang = types.InlineKeyboardButton("🌐 Change to English", callback_data="lang_en")
-    markup.add(btn_buy, btn_channel, btn_lang)
-    
-    welcome_text = (
-        "أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
-        "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
-        "• الشراء فوري وعشوائي وسريع عبر نجوم تليجرام (⭐ Stars).\n"
-        "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
-        f"🆔 معرفك الشخصي: `{user_id}`\n"
-        "👑 المالك / المطور: @diddy0\n\n"
-        "اختر ما يناسبك من القائمة 👇"
-    )
-    
-    if is_edit:
-        try:
-            bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=welcome_text, reply_markup=markup, parse_mode="Markdown")
-        except Exception:
-            bot.send_message(chat_id, welcome_text, reply_markup=markup, parse_mode="Markdown")
-    else:
-        bot.send_message(chat_id, welcome_text, reply_markup=markup, parse_mode="Markdown")
+# القائمة الرئيسية
+def main_menu():
+    keyboard = InlineKeyboardBuilder()
+    keyboard.row(InlineKeyboardButton(text="🛒 شراء رقم (80 سنت / 40 نجمة)", callback_data="buy_number"))
+    keyboard.row(InlineKeyboardButton(text="🎁 تجميع النقاط والهدية اليومية", callback_data="ref_menu"))
+    keyboard.row(InlineKeyboardButton(text="⭐ شحن الرصيد بالنجوم", callback_data="recharge_menu"))
+    return keyboard.as_markup()
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
+# أمر البدء (مع دعم الإحالات والاشتراك الإجباري)
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message):
     user_id = message.from_user.id
+    args = message.text.split()
     
-    # فحص الاشتراك الإجباري
-    if not check_subscription(user_id):
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_channel = types.InlineKeyboardButton("📢 اشترك في قناة المتجر", url=CHANNEL_URL)
-        btn_check = types.InlineKeyboardButton("✅ تحقق من الاشتراك", callback_data="check_sub")
-        markup.add(btn_channel, btn_check)
+    # التحقق من قاعدة البيانات وتسجيل المستخدم إن لم يكن موجوداً
+    cursor.execute("SELECT balance, last_bonus FROM users WHERE user_id = ?", (user_id,))
+    user = cursor.fetchone()
+    
+    if not user:
+        # فحص وجود كود إحالة في الرابط
+        ref_id = None
+        if len(args) > 1 and args[1].startswith("ref_"):
+            try:
+                potential_ref = int(args[1].replace("ref_", ""))
+                if potential_ref != user_id:
+                    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (potential_ref,))
+                    if cursor.fetchone():
+                        ref_id = potential_ref
+            except ValueError:
+                pass
+            
+        cursor.execute("INSERT INTO users (user_id, balance, referred_by) VALUES (?, 0, ?)", (user_id, ref_id))
+        conn.commit()
         
-        bot.send_message(
-            message.chat.id, 
-            "⚠️ **عذراً عزيزي!**\n\n"
-            "للاستفادة من خدمات متجر X9 وشراء الأرقام، يجب عليك الاشتراك في قناة المتجر أولاً 👇", 
-            reply_markup=markup, 
-            parse_mode="Markdown"
+        # إذا دخل عبر إحالة صحيحة، نعطي صاحب الرابط 1 سنت
+        if ref_id:
+            cursor.execute("UPDATE users SET balance = balance + 1 WHERE user_id = ?", (ref_id,))
+            conn.commit()
+            try:
+                await bot.send_message(ref_id, "🎉 مبروك! دخل شخص جديد عبر رابط إحالتك وحصلت على **1 سنت** إضافي!")
+            except Exception:
+                pass
+
+    # التحقق من الاشتراك الإجباري في القناة
+    is_subbed = await check_subscription(user_id)
+    if not is_subbed:
+        sub_kb = InlineKeyboardBuilder()
+        sub_kb.row(InlineKeyboardButton(text="📢 اشترك في القناة", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"))
+        sub_kb.row(InlineKeyboardButton(text="✅ تحقق من الاشتراك", callback_data="check_sub"))
+        await message.answer(
+            f"⚠️ عذراً عزيزي، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه:\n{CHANNEL_USERNAME}\n\nبعد الاشتراك اضغط على زر التحقق بالأسفل 👇",
+            reply_markup=sub_kb.as_markup()
         )
         return
 
-    send_main_menu(message.chat.id, user_id)
+    await message.answer(
+        "👋 أهلاً بك في **X9 Store** للأرقام والخدمات الرقمية!\n\n"
+        "اختر ما يناسبك من القائمة أدناه 👇",
+        reply_markup=main_menu()
+    )
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    user_id = call.from_user.id
+# زر التحقق من الاشتراك
+@dp.callback_query(F.data == "check_sub")
+async def process_check_sub(callback: types.CallbackQuery):
+    if await check_subscription(callback.from_user.id):
+        await callback.message.delete()
+        await callback.message.answer("✅ تم التحقق بنجاح! أهلاً بك:", reply_markup=main_menu())
+    else:
+        await callback.answer("❌ لم تقم بالاشتراك في القناة بعد!", show_alert=True)
 
-    if call.data == "check_sub":
-        if check_subscription(user_id):
-            bot.answer_callback_query(call.id, text="✅ شكراً لاشتراكك! تم فتح البوت بنجاح.", show_alert=True)
-            send_main_menu(call.message.chat.id, user_id, message_id=call.message.message_id, is_edit=True)
-        else:
-            bot.answer_callback_query(call.id, text="❌ لم تقم بالاشتراك في القناة بعد! اشترك ثم اضغط تحقق.", show_alert=True)
+# قائمة الإحالات والهدية اليومية
+@dp.callback_query(F.data == "ref_menu")
+async def ref_menu(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    balance = cursor.fetchone()[0]
+    
+    bot_info = await bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+    
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text="🎁 استلام الهدية اليومية (1 سنت)", callback_data="claim_bonus"))
+    kb.row(InlineKeyboardButton(text="« عودة للقائمة الرئيسية", callback_data="main_menu"))
+    
+    text = (
+        "🎁 **نظام تجميع النقاط والإحالات**\n\n"
+        f"💰 رصيدك الحالي: **{balance} سنت**\n\n"
+        "📌 **رابط الإحالة الخاص بك:**\n"
+        f"`{ref_link}`\n\n"
+        "🔗 قم بمشاركة الرابط مع أصدقائك. عن كل شخص يدخل البوت عبر رابطك، تحصل فوراً على **1 سنت**!\n"
+        "⏰ وتحصل على **1 سنت** مجاني يومياً من زر الهدية بالأسفل."
+    )
+    await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+# استلام الهدية اليومية (كل 24 ساعة)
+@dp.callback_query(F.data == "claim_bonus")
+async def claim_bonus(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    now = datetime.now()
+    
+    cursor.execute("SELECT last_bonus FROM users WHERE user_id = ?", (user_id,))
+    last_bonus_str = cursor.fetchone()[0]
+    
+    if last_bonus_str:
+        last_bonus_time = datetime.fromisoformat(last_bonus_str)
+        if now - last_bonus_time < timedelta(hours=24):
+            remaining = timedelta(hours=24) - (now - last_bonus_time)
+            hours, remainder = divmod(int(remaining.total_seconds()), 3600)
+            minutes, _ = divmod(remainder, 60)
+            await callback.answer(f"⏳ لقد استلمت هديتك اليومية مسبقاً. يمكنك الاستلام بعد: {hours} ساعة و {minutes} دقيقة.", show_alert=True)
+            return
+
+    # تحديث الرصيد ووقت الهدية
+    cursor.execute("UPDATE users SET balance = balance + 1, last_bonus = ? WHERE user_id = ?", (now.isoformat(), user_id))
+    conn.commit()
+    
+    await callback.answer("🎉 مبروك! تم إضافة 1 سنت إلى رصيدك بنجاح.", show_alert=True)
+    await ref_menu(callback)
+
+# قائمة شحن الرصيد المرنة (كل نجمة = 2 سنت، تبدأ من نجمة واحدة)
+@dp.callback_query(F.data == "recharge_menu")
+async def recharge_menu(callback: types.CallbackQuery):
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text="⭐ شحن 1 نجمة = 2 سنت", callback_data="pay_stars_1"))
+    kb.row(InlineKeyboardButton(text="⭐ شحن 5 نجوم = 10 سنت", callback_data="pay_stars_5"))
+    kb.row(InlineKeyboardButton(text="⭐ شحن 10 نجوم = 20 سنت", callback_data="pay_stars_10"))
+    kb.row(InlineKeyboardButton(text="⭐ شحن 25 نجمة = 50 سنت", callback_data="pay_stars_25"))
+    kb.row(InlineKeyboardButton(text="« عودة للقائمة الرئيسية", callback_data="main_menu"))
+    
+    await callback.message.edit_text(
+        "⭐ **شحن الرصيد الداخلي بالنجوم (XTR)**\n\n"
+        "الحسبة المرنة: **كل نجمة واحدة = 2 سنت**!\n"
+        "اختر عدد النجوم التي تريد دفعها ليتم إضافتها فوراً لرصيدك الداخلي:",
+        reply_markup=kb.as_markup(),
+        parse_mode="Markdown"
+    )
+
+# العودة للقائمة الرئيسية عبر الأزرار
+@dp.callback_query(F.data == "main_menu")
+async def back_to_main(callback: types.CallbackQuery):
+    await callback.message.edit_text("👋 أهلاً بك مجدداً في القائمة الرئيسية:", reply_markup=main_menu())
+
+# شراء رقم
+@dp.callback_query(F.data == "buy_number")
+async def buy_number_options(callback: types.CallbackQuery):
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text="🛒 شراء بالسنتات (80 سنت)", callback_data="buy_with_balance"))
+    kb.row(InlineKeyboardButton(text="⭐ شراء بالنجوم الفورية (40 نجمة)", callback_data="buy_with_stars"))
+    kb.row(InlineKeyboardButton(text="« عودة للقائمة الرئيسية", callback_data="main_menu"))
+    
+    await callback.message.edit_text(
+        "🛍️ **شراء رقم جديد**\n\n"
+        "سعر الرقم: **80 سنت** أو **40 نجمة تليجرام**.\n"
+        "اختر طريقة الدفع التي تفضلها:",
+        reply_markup=kb.as_markup(),
+        parse_mode="Markdown"
+    )
+
+# الشراء باستخدام الرصيد الداخلي (السنتات)
+@dp.callback_query(F.data == "buy_with_balance")
+async def buy_with_balance(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    balance = cursor.fetchone()[0]
+    
+    if balance < 80:
+        await callback.answer(f"❌ رصيدك الحالي ({balance} سنت) لا يكفي لشراء رقم. يلزمك 80 سنت على الأقل. اجمع النقاط عبر الإحالات أو اشحن بالنجوم!", show_alert=True)
         return
+    
+    # خصم الرصيد وإتمام الطلب
+    cursor.execute("UPDATE users SET balance = balance - 80 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    
+    # هنا تضع كود تسليم الرقم الفعلي للمستخدم
+    await callback.message.edit_text(
+        "✅ **تمت عملية الشراء بنجاح!**\n\n"
+        "🇺🇸 رقمك الأمريكي/العالمي:\n"
+        "`+1 (555) 019-8234`\n"
+        "🔑 كود التحقق (OTP): سيظهر هنا أو وصلك عبر النظام.\n\n"
+        "شكراً لاستخدامك متجرنا!",
+        reply_markup=InlineKeyboardBuilder().add(InlineKeyboardButton(text="« عودة للقائمة", callback_data="main_menu")).as_markup(),
+        parse_mode="Markdown"
+    )
 
-    # الحماية: التحقق من الاشتراك قبل تنفيذ أي زر
-    if not check_subscription(user_id):
-        bot.answer_callback_query(call.id, text="⚠️ يجب عليك الاشتراك في قناة المتجر أولاً!", show_alert=True)
-        return
+# معالجة فواتير نجوم تليجرام والشحن المرن
+@dp.callback_query(F.data.in_(["buy_with_stars", "pay_stars_1", "pay_stars_5", "pay_stars_10", "pay_stars_25"]))
+async def process_stars_payment(callback: types.CallbackQuery):
+    if callback.data == "buy_with_stars":
+        title = "شراء رقم مميز"
+        description = "الحصول على رقم فوري مع كود الـ OTP"
+        payload = "buy_number_xtr"
+        prices = [LabeledPrice(label="XTR", amount=40)] # 40 نجمة = 80 سنت
+    elif callback.data == "pay_stars_1":
+        title = "شحن 2 سنت"
+        description = "إضافة 2 سنت لرصيدك الداخلي (مقابل 1 نجمة)"
+        payload = "recharge_1"
+        prices = [LabeledPrice(label="XTR", amount=1)]
+    elif callback.data == "pay_stars_5":
+        title = "شحن 10 سنت"
+        description = "إضافة 10 سنت لرصيدك الداخلي (مقابل 5 نجوم)"
+        payload = "recharge_5"
+        prices = [LabeledPrice(label="XTR", amount=5)]
+    elif callback.data == "pay_stars_10":
+        title = "شحن 20 سنت"
+        description = "إضافة 20 سنت لرصيدك الداخلي (مقابل 10 نجوم)"
+        payload = "recharge_10"
+        prices = [LabeledPrice(label="XTR", amount=10)]
+    else:
+        title = "شحن 50 سنت"
+        description = "إضافة 50 سنت لرصيدك الداخلي (مقابل 25 نجمة)"
+        payload = "recharge_25"
+        prices = [LabeledPrice(label="XTR", amount=25)]
 
-    if call.data == "categories_menu":
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        available_count = sum(1 for data in NUMBERS_STORE.values() if not data["sold"])
-        btn_usa = types.InlineKeyboardButton(f"🇺🇸 أمريكا ({available_count}) - 44 نجمة ⭐", callback_data="buy_random_usa")
-        btn_back = types.InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")
-        markup.add(btn_usa, btn_back)
-        
-        bot.edit_message_text(
-            chat_id=call.message.chat.id, 
-            message_id=call.message.message_id, 
-            text="🌍 **اختر الدولة (الشراء بالنجوم):**", 
-            reply_markup=markup, 
+    await bot.send_invoice(
+        chat_id=callback.from_user.id,
+        title=title,
+        description=description,
+        payload=payload,
+        currency="XTR",
+        prices=prices
+    )
+    await callback.answer()
+
+# معالجة تفاصيل الدفع المسبق (Pre-checkout)
+@dp.pre_checkout_query()
+async def pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
+    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+# تأكيد نجاح الدفع بالنجوم وإضافة الرصيد أو الخدمة
+@dp.message(F.successful_payment)
+async def successful_payment(message: types.Message):
+    payment_info = message.successful_payment
+    payload = payment_info.invoice_payload
+    user_id = message.from_user.id
+    
+    if payload == "buy_number_xtr":
+        await message.answer(
+            "✅ **تم الدفع بنجاح عبر نجوم تليجرام!**\n\n"
+            "🇺🇸 رقمك الجديد:\n"
+            "`+1 (555) 892-3311`\n"
+            "استمتع بخدمتك!",
+            reply_markup=main_menu(),
             parse_mode="Markdown"
         )
+    elif payload == "recharge_1":
+        cursor.execute("UPDATE users SET balance = balance + 2 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        await message.answer("⭐ تم شحن رصيدك بنجاح بـ **2 سنت**!", reply_markup=main_menu(), parse_mode="Markdown")
+    elif payload == "recharge_5":
+        cursor.execute("UPDATE users SET balance = balance + 10 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        await message.answer("⭐ تم شحن رصيدك بنجاح بـ **10 سنت**!", reply_markup=main_menu(), parse_mode="Markdown")
+    elif payload == "recharge_10":
+        cursor.execute("UPDATE users SET balance = balance + 20 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        await message.answer("⭐ تم شحن رصيدك بنجاح بـ **20 سنت**!", reply_markup=main_menu(), parse_mode="Markdown")
+    elif payload == "recharge_25":
+        cursor.execute("UPDATE users SET balance = balance + 50 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        await message.answer("⭐ تم شحن رصيدك بنجاح بـ **50 سنت**!", reply_markup=main_menu(), parse_mode="Markdown")
 
-    elif call.data == "buy_random_usa":
-        available_numbers = [num_id for num_id, data in NUMBERS_STORE.items() if not data["sold"]]
-        
-        if not available_numbers:
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            markup.add(types.InlineKeyboardButton("📢 قناة المتجر (X9)", url=CHANNEL_URL))
-            markup.add(types.InlineKeyboardButton("🔙 رجوع", callback_data="categories_menu"))
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="عذراً، نفدت جميع الأرقام من متجر X9 حالياً 🔴", reply_markup=markup, parse_mode="Markdown")
-            return
+# تشغيل البوت
+async def main():
+    await dp.start_polling(bot)
 
-        chosen_num_id = random.choice(available_numbers)
-
-        try:
-            prices = [types.LabeledPrice(label=f"USA Number #{chosen_num_id}", amount=44)]
-            bot.send_invoice(
-                chat_id=call.message.chat.id,
-                title="شراء رقم أمريكي مميز - X9",
-                description="⚠️ تنبيه هام: لو سجلت خروج من الحساب بعد استلامه لن يتم تعويضك بأي شكل.",
-                invoice_payload=f"buy_usa_number_{chosen_num_id}",
-                provider_token="",  
-                currency="XTR",     
-                prices=prices,
-                start_parameter=f"buy-number-{chosen_num_id}"
-            )
-        except Exception as e:
-            bot.answer_callback_query(call.id, text=f"خطأ في إنشاء الفاتورة: {str(e)}", show_alert=True)
-
-    elif call.data == "main_menu":
-        send_main_menu(call.message.chat.id, user_id, message_id=call.message.message_id, is_edit=True)
-
-    elif call.data.startswith("get_otp_"):
-        num_id = call.data.split("_")[2]
-        data = NUMBERS_STORE.get(num_id)
-        
-        if not data or data["buyer_id"] != user_id:
-            bot.answer_callback_query(call.id, text="هذا الرقم ليس ملكاً لك!", show_alert=True)
-            return
-
-        bot.answer_callback_query(call.id, text="🔄 جاري جلب الكود وتحديث الرسالة...")
-
-        code_result = fetch_otp_on_demand(data["session"], data["api_id"], data["api_hash"])
-        
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_get_code = types.InlineKeyboardButton("🔄 - طلب كود (تحديث)", callback_data=f"get_otp_{num_id}")
-        markup.add(btn_get_code)
-        
-        try:
-            bot.edit_message_text(
-                chat_id=call.message.chat.id, 
-                message_id=call.message.message_id, 
-                text=(
-                    f"📥 **متجر X9** - نتيجة جلب الكود للرقم\n\n"
-                    f"• كود التحقق / الرسالة : `{code_result}`\n\n"
-                    f"⚠️ **تنبيه هام جداً:**\n"
-                    f"• لو سجلت خروج من الحساب بعد استلامه لن يتم تعويضك بأي شكل نهائياً!\n\n"
-                    f"*(يمكنك الضغط على زر التحديث في أي وقت لجلب الكود مرة أخرى)*"
-                ), 
-                reply_markup=markup, 
-                parse_mode="Markdown"
-            )
-        except Exception:
-            pass
-
-    elif call.data == "lang_en":
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        btn_buy = types.InlineKeyboardButton("🛒 Buy Numbers with Stars ⭐", callback_data="categories_menu_en")
-        btn_channel = types.InlineKeyboardButton("📢 X9 Channel", url=CHANNEL_URL)
-        btn_lang = types.InlineKeyboardButton("🌐 تغيير إلى العربية", callback_data="main_menu")
-        markup.add(btn_buy, btn_channel, btn_lang)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"Welcome to X9 Store 🌐\n\n• Get USA numbers using Telegram Stars ⭐\n• Instant purchase\n\n🆔 ID: `{user_id}`\n👑 Owner: @diddy0\n\nChoose from the menu 👇", reply_markup=markup, parse_mode="Markdown")
-
-    elif call.data == "categories_menu_en":
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        available_count = sum(1 for data in NUMBERS_STORE.values() if not data["sold"])
-        btn_usa = types.InlineKeyboardButton(f"🇺🇸 USA ({available_count}) - 44 Stars ⭐", callback_data="buy_random_usa_en")
-        btn_back = types.InlineKeyboardButton("🔙 Back", callback_data="lang_en")
-        markup.add(btn_usa, btn_back)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="🌍 **Select Country:**", reply_markup=markup, parse_mode="Markdown")
-
-    elif call.data == "buy_random_usa_en":
-        available_numbers = [num_id for num_id, data in NUMBERS_STORE.items() if not data["sold"]]
-        
-        if not available_numbers:
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            markup.add(types.InlineKeyboardButton("📢 X9 Channel", url=CHANNEL_URL))
-            markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="categories_menu_en"))
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Sorry, no numbers available right now in X9 🔴", reply_markup=markup, parse_mode="Markdown")
-            return
-
-        chosen_num_id = random.choice(available_numbers)
-
-        try:
-            prices = [types.LabeledPrice(label=f"USA Number #{chosen_num_id}", amount=44)]
-            bot.send_invoice(
-                chat_id=call.message.chat.id,
-                title="Buy USA Number - X9 Store",
-                description="⚠️ Warning: If you log out after receiving the number, no compensation will be provided.",
-                invoice_payload=f"buy_usa_number_{chosen_num_id}",
-                provider_token="",
-                currency="XTR",
-                prices=prices,
-                start_parameter=f"buy-number-{chosen_num_id}"
-            )
-        except Exception as e:
-            bot.answer_callback_query(call.id, text=f"Error: {str(e)}", show_alert=True)
-
-@bot.pre_checkout_query_handler(func=lambda query: True)
-def checkout(pre_checkout_query):
-    payload = pre_checkout_query.invoice_payload
-    num_id = payload.split("_")[-1]
-    data = NUMBERS_STORE.get(num_id)
-    
-    if not data or data["sold"]:
-        bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False, error_message="عذراً، هذا الرقم تم بيعه للتو لشخص آخر!")
-    else:
-        bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
-
-@bot.message_handler(content_types=['successful_payment'])
-def got_payment(message):
-    user_id = message.from_user.id
-    payload = message.successful_payment.invoice_payload
-    num_id = payload.split("_")[-1]
-    
-    data = NUMBERS_STORE.get(num_id)
-    if not data:
-        return
-
-    data["sold"] = True
-    data["buyer_id"] = user_id
-    
-    reply_text = (
-        f"✅ **تم دفع 44 نجمة بنجاح واستلام الرقم عبر متجر X9!**\n\n"
-        f"📱 **رقمك هو:** `{data['phone']}`\n\n"
-        f"⚠️ **تنبيه هام جداً:**\n"
-        f"• لو سجلت خروج من الحساب بعد استلامه لن يتم تعويضك بأي شكل من الأشكال!\n\n"
-        f"• الآن اضغط على زر **طلب الكود** أدناه لمعرفة كود التحقق (OTP)."
-    )
-    
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_get_code = types.InlineKeyboardButton("🔄 - طلب كود (تحديث)", callback_data=f"get_otp_{num_id}")
-    markup.add(btn_get_code)
-    
-    bot.send_message(message.chat.id, reply_text, reply_markup=markup, parse_mode="Markdown")
-
-def fetch_otp_on_demand(session_str, api_id, api_hash):
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        async def main():
-            if not session_str:
-                return "خطأ: لم يتم ضبط السيشن بشكل صحيح ❌"
-                
-            client = TelegramClient(StringSession(session_str), api_id, api_hash)
-            await client.connect()
-            if not await client.is_user_authorized():
-                await client.disconnect()
-                return "الجلسة غير صالحة أو منتهية ❌"
-            
-            messages = await client.get_messages(777000, limit=1)
-            if not messages:
-                await client.disconnect()
-                return "لم يتم العثور على رسائل بعد ⏳"
-            
-            latest_msg = messages[0].message
-            await client.disconnect()
-            
-            codes = re.findall(r'\b\d{5,6}\b', latest_msg)
-            if codes:
-                return codes[0]
-            return latest_msg
-
-        return loop.run_until_complete(main())
-    except Exception as e:
-        return f"خطأ بالاتصال: {str(e)}"
-
-if __name__ == '__main__':
-    print("Starting X9 Bot (With Force Subscription Enabled)...")
-    bot.remove_webhook()
-    bot.infinity_polling()
+if __name__ == "__main__":
+    asyncio.run(main())
