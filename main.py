@@ -10,6 +10,8 @@ from aiogram.types import (
 )
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
@@ -26,6 +28,10 @@ USA_NUMBER_PRICE = 0.80
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# حالات FSM للإدخال المخصص
+class RechargeStates(StatesGroup):
+    waiting_for_stars_count = State()
+
 # ================= قاعدة البيانات =================
 conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -40,7 +46,7 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# ================= مستودع الأرقام (الأرقام الأمريكية الحقيقية بسعر 80 سنت) =================
+# ================= مستودع الأرقام (الأرقام الأمريكية بسعر 80 سنت) =================
 NUMBERS_STORE = {
     "1": {
         "country": "usa", "name": "🇺🇸 أمريكا", "price": USA_NUMBER_PRICE, "phone": "+13025060244",
@@ -55,7 +61,6 @@ NUMBERS_STORE = {
 }
 
 def usd_to_stars(usd_amount):
-    # كل نجمة = 2 سنت (0.02 دولار)
     return max(1, round(usd_amount / STAR_PRICE_USD))
 
 # ================= القائمة الرئيسية =================
@@ -85,7 +90,8 @@ def get_main_keyboard(user_id):
     return text_header, keyboard
 
 @dp.message(Command("start"))
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
+    await state.clear()
     user_id = message.from_user.id
     args = message.text.split()
     
@@ -108,7 +114,7 @@ async def cmd_start(message: Message):
         conn.commit()
         
         if ref_id:
-            # إعطاء الصديق 1 سنت عند الدخول عبر الرابط
+            # إعطاء الصديق 1 سنت عند الدخول عبر رابط الإحالة
             cursor.execute("UPDATE users SET balance = balance + 0.01 WHERE user_id = ?", (ref_id,))
             conn.commit()
             try:
@@ -120,7 +126,8 @@ async def cmd_start(message: Message):
     await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
 
 @dp.callback_query(F.data == "main_menu")
-async def main_menu_callback(callback: CallbackQuery):
+async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     user_id = callback.from_user.id
     text, keyboard = get_main_keyboard(user_id)
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -190,26 +197,52 @@ async def pay_with_stars(callback: CallbackQuery):
     await callback.answer()
 
 @dp.callback_query(F.data == "recharge_menu")
-async def recharge_menu(callback: CallbackQuery):
+async def recharge_menu(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(RechargeStates.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ شحن الرصيد بالنجوم (كل نجمة = 2 سنت)", callback_data="rech_stars_info")],
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🔙 رجوع للقائمة الرئيسية", callback_data="main_menu")]
     ])
-    await callback.message.edit_text("💳 **شحن الرصيد:**\n\nنظام الشحن مخصص عبر نجوم تليجرام (Stars) حيث **كل نجمة = 2 سنت**.", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(
+        "💳 **شحن الرصيد المخصص بالنجوم:**\n\n"
+        "• ملاحظة: سعر النجمة الواحدة هو **2 سنت**.\n\n"
+        "✍️ **أرسل الآن في الشات عدد النجوم التي تريد شحنها** (أرسل رقماً فقط، مثلاً: `10` أو `50`):",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
     await callback.answer()
 
-@dp.callback_query(F.data == "rech_stars_info")
-async def rech_stars_info(callback: CallbackQuery):
+@dp.message(RechargeStates.waiting_for_stars_count)
+async def process_custom_stars_input(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not text.isdigit():
+        await message.answer("❌ يرجى إرسال رقم صحيح فقط لعدد النجوم (مثلاً: 10 أو 25):")
+        return
+        
+    stars_count = int(text)
+    if stars_count <= 0:
+        await message.answer("❌ يرجى إرسال رقم أكبر من الصفر:")
+        return
+        
+    total_cents = stars_count * 2
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ شحن 7 نجوم (تساوي 14 سنت)", callback_data="pay_custom_star_7")],
-        [InlineKeyboardButton(text="⭐ شحن 40 نجمة (تساوي 80 سنت)", callback_data="pay_custom_star_40")],
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="recharge_menu")]
+        [InlineKeyboardButton(text=f"⭐ ادفع {stars_count} نجمة (${total_cents} سنت)", callback_data=f"pay_custom_star_{stars_count}")],
+        [InlineKeyboardButton(text="🔙 إلغاء والعودة", callback_data="main_menu")]
     ])
-    await callback.message.edit_text("⭐ **اختر باقة شحن النجوم المناسبة لك:**\n(ملاحظة: سعر النجمة الواحدة هو 2 سنت)", reply_markup=keyboard, parse_mode="Markdown")
-    await callback.answer()
+    
+    await state.clear()
+    await message.answer(
+        f"📊 **تفاصيل عملية الشحن المخصصة:**\n\n"
+        f"• عدد النجوم: `{stars_count} نجمة`\n"
+        f"• القيمة المعادلة: `${total_cents / 100:.2f}` ({total_cents} سنت)\n"
+        f"• سعر النجمة: 2 سنت\n\n"
+        f"اضغط على زر الدفع أدناه لإتمام الشحنة بالنجوم 👇",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
 
 @dp.callback_query(F.data.startswith("pay_custom_star_"))
-async def pay_custom_stars(callback: CallbackQuery):
+async def pay_custom_stars_invoice(callback: CallbackQuery):
     stars_count = int(callback.data.replace("pay_custom_star_", ""))
     total_cents = stars_count * 2
     
@@ -257,7 +290,7 @@ async def claim_bonus(callback: CallbackQuery):
             await callback.answer(f"⏳ الهدية متاحة بعد {hours} ساعة و {minutes} دقيقة.", show_alert=True)
             return
 
-    # الهدية اليومية أصبحت 1 سنت
+    # الهدية اليومية 1 سنت
     cursor.execute("UPDATE users SET balance = balance + 0.01, last_bonus = ? WHERE user_id = ?", (now.isoformat(), user_id))
     conn.commit()
     await callback.answer("🎉 مبروك! تمت إضافة الهدية اليومية (1 سنت) برصيدك.", show_alert=True)
@@ -279,7 +312,7 @@ async def my_account(callback: CallbackQuery):
     await callback.answer()
 
 async def main():
-    print("Starting X9 Store Bot (Custom Stars & 80 Cents USA)...")
+    print("Starting X9 Store Bot (Custom Stars Input & 80 Cents USA)...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
