@@ -16,14 +16,14 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 
 # ================= الإعدادات الأساسية =================
-BOT_TOKEN = "8607094831:AAEsDwAWm8RddXiEGQEUF9aR94-7NT6Ju4E"
+BOT_TOKEN = "8947041920:AAFF8llkbKrI8WqBowy1IEjC8kso8ya7NJQ"
 ADMIN_USERNAME = "diddy0"
 
 # قناة الاشتراك الإجباري
 REQUIRED_CHANNEL = "VPP8P"
 
 # سعر الرقم الأمريكي الأساسي
-USA_NUMBER_PRICE = 0.40
+USA_NUMBER_PRICE = 0.50
 
 # قيمة الهدية اليومية والإحالة (سنت واحد)
 BONUS_AMOUNT = 0.01
@@ -115,7 +115,6 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
     
-    # فحص نظام الإحالة عند التسجيل
     args = message.text.split()
     referred_by = None
     if len(args) > 1 and args[1].startswith("ref_"):
@@ -242,6 +241,7 @@ async def buy_with_balance(callback: CallbackQuery):
         await callback.answer("❌ رصيدك غير كافٍ لشراء هذا الرقم!", show_alert=True)
         return
 
+    # خصم سعر الرقم فقط والاحتفاظ بالمتبقي دون تصفير
     cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (data["price"], user_id))
     conn.commit()
     
@@ -255,11 +255,12 @@ async def buy_with_balance(callback: CallbackQuery):
         f"✅ **تم الشراء بنجاح!**\n\n"
         f"📱 **الرقم:** `{data['phone']}`\n"
         f"💵 **الخصم:** ${data['price']:.2f}\n\n"
-        f"📥 **كود التحقق (OTP):**\n`{otp_text}`"
+        f"📥 **كود التحقق (OTP):**\n`{otp_text}`\n\n"
+        f"💡 **ملاحظة:** قم بطلب كود التفعيل في تطبيق تيليجرام أولاً، ثم اضغط على زر **(🔄 تحديث الكود)** بالأسفل ليظهر لك الكود فوراً."
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 جلب كود جديد (OTP)", callback_data=f"get_otp_{num_id}")],
+        [InlineKeyboardButton(text="🔄 تحديث الكود (OTP)", callback_data=f"get_otp_{num_id}")],
         [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
     ])
     
@@ -282,7 +283,8 @@ async def get_otp_callback(callback: CallbackQuery):
     
     msg = (
         f"📱 **الرقم:** `{data['phone']}`\n\n"
-        f"📥 **الكود الحالي (OTP):**\n`{otp_text}`"
+        f"📥 **الكود الحالي (OTP):**\n`{otp_text}`\n\n"
+        f"💡 **ملاحظة:** قم بطلب كود التفعيل في تطبيق تيليجرام أولاً، ثم اضغط على زر **(🔄 تحديث الكود)** ليظهر لك الكود فوراً."
     )
     try:
         await callback.message.edit_text(msg, reply_markup=keyboard, parse_mode="Markdown")
@@ -342,7 +344,6 @@ async def claim_bonus(callback: CallbackQuery):
             await callback.answer("❌ لقد حصلت على هديتك اليومية بالفعل، عد غداً!", show_alert=True)
             return
 
-    # المكافأة اليومية 1 سنت ($0.01)
     cursor.execute("UPDATE users SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (BONUS_AMOUNT, now.isoformat(), user_id))
     conn.commit()
     await callback.answer(f"🎉 تم إضافة ${BONUS_AMOUNT:.2f} (سنت واحد) إلى رصيدك!", show_alert=True)
@@ -414,11 +415,11 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         await client.connect()
         if not await client.is_user_authorized():
             await client.disconnect()
-            return "الجلسة منتهية أو تم الحظر ❌"
+            return "الجلسة منتهية أو محظورة عام ❌"
         messages = await client.get_messages(777000, limit=1)
         await client.disconnect()
         if not messages:
-            return "لم يصل كود التفعيل بعد ⏳ (اطلب الكود ثم اضغط تحديث)"
+            return "لم يصل كود التفعيل بعد ⏳ (اطلب الكود في تطبيق تيليجرام ثم اضغط تحديث)"
         return messages[0].message
     except Exception as e:
         return f"خطأ في الاتصال: {str(e)}"
