@@ -19,7 +19,6 @@ from telethon.sessions import StringSession
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXvSih9YaE")
 ADMIN_USERNAME = "diddy0"
 
-# كل نجمة واحدة = 2 سنت (0.02 دولار)
 USA_NUMBER_PRICE = 0.80
 
 bot = Bot(token=BOT_TOKEN)
@@ -195,7 +194,6 @@ async def buy_with_balance(callback: CallbackQuery):
     
     otp_text = await fetch_otp_async(session, api_id, api_hash)
     
-    # ⚠️ التحذير بالعربية الفصحى بعد الشراء
     success_msg = (
         f"✅ **تم شراء الرقم بنجاح!**\n\n"
         f"📱 **الرقم:** `{phone}`\n"
@@ -226,7 +224,6 @@ async def get_otp_callback(callback: CallbackQuery):
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     await callback.answer(f"الكود الحالي: {otp_text}", show_alert=True)
 
-# ================= قسم شحن الرصيد بالنجوم =================
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_stars_count)
@@ -291,7 +288,6 @@ async def pay_custom_stars_invoice(callback: CallbackQuery):
     )
     await callback.answer()
 
-# ================= قسم تحويل الرصيد =================
 @dp.callback_query(F.data == "transfer_menu")
 async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_transfer_id)
@@ -369,7 +365,7 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     await message.answer(
         f"✅ **تمت عملية التحويل بنجاح!**\n\n"
         f"💸 المبلغ المحول: `${amount:.2f}`\n"
-        f"👤 إلى المستخدم: `{recipient_id}`\n"
+        f"👤 إلى المستخدم: `${recipient_id}`\n"
         f"💰 رصيدك المتبقي: `${sender_balance - amount:.2f}`",
         parse_mode="Markdown"
     )
@@ -455,15 +451,26 @@ async def fetch_otp_async(session_str, api_id, api_hash):
 
 async def main():
     print("Starting X9 Store Bot...")
-    # تنظيف الويب هوك والاتصالات القديمة فوراً لتجنب خطأ التضارب
-    await bot.delete_webhook(drop_pending_updates=True)
+    
+    # ⚡ الحل الجذري لمشكلة تضارب الاتصالات: حذف الويب هوك والتحديثات المعلقة بقوة
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+    
+    # انتظار قصير لضمان تحرير التوكن على سيرفرات تيليجرام
+    await asyncio.sleep(2)
     
     commands = [
         BotCommand(command="start", description="ابداء")
     ]
-    await bot.set_my_commands(commands)
+    try:
+        await bot.set_my_commands(commands)
+    except Exception:
+        pass
     
-    await dp.start_polling(bot)
+    # تشغيل البوت وإغلاق أي جلسة سابقة تلقائياً
+    await dp.start_polling(bot, close_bot_session=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
