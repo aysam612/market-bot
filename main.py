@@ -15,15 +15,15 @@ from aiogram.fsm.context import FSMContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
-# ================= إعدادات بوت التجارب =================
+# ================= الإعدادات الأساسية =================
 BOT_TOKEN = "8607094831:AAEsDwAWm8RddXiEGQEUF9aR94-7NT6Ju4E"
 ADMIN_USERNAME = "diddy0"
 
-# الاشتراك الإجباري
+# قناة الاشتراك الإجباري
 REQUIRED_CHANNEL = "VPP8P"
 
-# السعر مجاني للتجربة
-USA_NUMBER_PRICE = 0.00
+# سعر الرقم الأمريكي الأساسي
+USA_NUMBER_PRICE = 0.50
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -33,8 +33,8 @@ class States(StatesGroup):
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
 
-# ================= قاعدة بيانات جديدة للتجارب =================
-conn = sqlite3.connect("test_database.db", check_same_thread=False)
+# ================= قاعدة البيانات الأساسية =================
+conn = sqlite3.connect("telegram_bot.db", check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -47,11 +47,11 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# ================= مستودع الأرقام (تم توضيح الرقم السليم وغير السليم) =================
+# ================= مخزن الأرقام الأساسي =================
 NUMBERS_STORE = {
     "1": {
         "country": "usa", 
-        "name": "🇺🇸 أمريكا (غير سليم ⚠️)", 
+        "name": "🇺🇸 أمريكا", 
         "price": USA_NUMBER_PRICE, 
         "phone": "+13025060244",
         "session": "1AZWarzYBu4DsJhY23nLFER2qDvE9lqCBXrQ27HVWKLqXChIJflm3zoBMhdsya9NdpEfChtBNOBW7PLtdyciAT5rXmZKBC7ky85O3NzH_DWwHs-K_Jrqal9vPyPawIjgq0S3wEumn2ntGrXL3sZObdteRHVh5M-1mdnW7_vIa7W3DQk00P_k7e595JFTtY0kvbC5CeI4yTswQ0ZFxBDgMtH099iKenqtEB6K3-somzxxNiZaPTMl_XYJCNmaBfOA_f-tIb_I1jjekQ-hVeKLh9d5hP2b-05rH1cuqb92EZGWMNm6Wy3KW86nGC7ShF3Cum5yoYlwbj-By4R8XlI3otfuyOvFz5Io=",
@@ -62,7 +62,7 @@ NUMBERS_STORE = {
     },
     "2": {
         "country": "usa", 
-        "name": "🇺🇸 أمريكا (سليم ✅)", 
+        "name": "🇺🇸 أمريكا", 
         "price": USA_NUMBER_PRICE, 
         "phone": "+13649004531",
         "session": "1AZWarzYBu2uAspmH_zOu7qW53ONrFQw6vhIypDVm5N9LMiUAmBhkON--qPfBcT83HDjTJUeBWNJQ0UELHaLo0xnDnVi3MTm9ZyaGlIO-h5P2LH7OB1jghSFqD_ysUgbUagvN6p8BElr4gmVNO2L5I5sOL52rzHHwbcRCKB-DQvrXH3D7X7yBUXT7UZ8kKs0Ve_926fUoLoUzI1UBvGmdP5Gd8cYHmZJiDjUxFkALKNHlexdJToWLiY-svegkzXGq1ICBjaGGNCMAk__P1-W-HvRv2NbTfX3SDaPFzitNJzqRfxFDf8tysezYXHnzRbBz4cvqEQqcSVrTwvwI6kW7h5uA8Pz2zk0=",
@@ -90,20 +90,20 @@ def get_main_keyboard(user_id):
     balance = row[0] if row and row[0] is not None else 0.0
     
     text_header = (
-        "🧪 **بوت التجارب والاختبار** 🌐\n\n"
-        "• الأرقام مجانية للتجربة فقط ($0.00).\n"
-        "• يمكنك اختيار الرقم المراد تجريبه (السليم أو الغير سليم).\n\n"
+        "🤖 **أهلاً بك في متجر الأرقام الرسمي** 🌐\n\n"
+        "• يمكنك شراء أرقام تليجرام واستقبال الكود مباشرة.\n"
+        "• اشحن رصيدك عبر نجوم تليجرام واستفد من العروض.\n\n"
         f"🆔 المعرف: `{user_id}`\n"
-        f"💵 الرصيد: `${balance:.2f}`\n\n"
-        "اختر ما تريد تجريبه 👇"
+        f"💵 رصيدك: `${balance:.2f}`\n\n"
+        "اختر من القائمة أدناه 👇"
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛒 تجربة شراء رقم (مجاني)", callback_data="buy_number_menu")],
+        [InlineKeyboardButton(text="🛒 شراء رقم جديد", callback_data="buy_number_menu")],
         [InlineKeyboardButton(text="⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 هدية يومية", callback_data="claim_bonus")],
         [InlineKeyboardButton(text="💳 شحن رصيد نجوم", callback_data="recharge_menu")],
         [InlineKeyboardButton(text="🤝 رابط إحالة", callback_data="ref_menu"), InlineKeyboardButton(text="💳 تحويل رصيد", callback_data="transfer_menu")],
-        [InlineKeyboardButton(text="💬 المطور", url=f"https://t.me/{ADMIN_USERNAME}")]
+        [InlineKeyboardButton(text="💬 الدعم الفني", url=f"https://t.me/{ADMIN_USERNAME}")]
     ])
     return text_header, keyboard
 
@@ -118,9 +118,9 @@ async def cmd_start(message: Message, state: FSMContext):
             [InlineKeyboardButton(text="🔄 تحقق من الاشتراك", callback_data="check_sub")]
         ])
         await message.answer(
-            "⚠️ **يجب عليك الاشتراك في القناة أولاً لتجربة البوت!**\n\n"
+            "⚠️ **عذراً! يجب عليك الاشتراك في القناة أولاً لاستخدام البوت.**\n\n"
             f"اشترك هنا: @{REQUIRED_CHANNEL}\n"
-            "ثم اضغط تحقق 👇",
+            "ثم اضغط على زر التحقق 👇",
             reply_markup=sub_keyboard,
             parse_mode="Markdown"
         )
@@ -166,10 +166,10 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
 async def buy_number_menu(callback: CallbackQuery):
     available_usa = sum(1 for d in NUMBERS_STORE.values() if d["country"] == "usa" and not d["sold"])
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🇺🇸 أمريكا تجريبي ({available_usa}) - مجاناً 🎁", callback_data="buy_country_usa")],
+        [InlineKeyboardButton(text=f"🇺🇸 أرقام أمريكا ({available_usa}) - ${USA_NUMBER_PRICE:.2f}", callback_data="buy_country_usa")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
-    await callback.message.edit_text("🌍 **اختر الدولة للتجربة:**", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text("🌍 **اختر الدولة لشراء رقم:**", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "buy_country_usa")
@@ -182,13 +182,13 @@ async def buy_country_usa_handler(callback: CallbackQuery):
             
     if not available_buttons:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]])
-        await callback.message.edit_text("نفدت الأرقام التجريبية حالياً 🔴", reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text("للأسف نفدت الأرقام المتوفرة حالياً 🔴", reply_markup=keyboard, parse_mode="Markdown")
         await callback.answer()
         return
 
     available_buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=available_buttons)
-    await callback.message.edit_text("اختر الرقم المراد تجربته بالتحديد:", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text("اختر الرقم الذي تفضل شراءه:", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("select_num_"))
@@ -196,15 +196,15 @@ async def select_number_handler(callback: CallbackQuery):
     num_id = callback.data.replace("select_num_", "")
     data = NUMBERS_STORE.get(num_id)
     if not data or data["sold"]:
-        await callback.answer("هذا الرقم غير متاح!", show_alert=True)
+        await callback.answer("هذا الرقم لم يعد متاحاً!", show_alert=True)
         return
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🎁 تجربة الشراء المجاني ($0.00)", callback_data=f"buy_balance_{num_id}")],
+        [InlineKeyboardButton(text=f"شراء من الرصيد (${data['price']:.2f})", callback_data=f"buy_balance_{num_id}")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_country_usa")]
     ])
     await callback.message.edit_text(
-        f"الدولة: {data['name']}\nالسعر: $0.00\nالرقم: `{data['phone']}`\n\nاضغط لإتمام التجربة:",
+        f"الدولة: {data['name']}\nالسعر: ${data['price']:.2f}\nالرقم: `{data['phone']}`\n\nتأكيد عملية الشراء؟",
         reply_markup=keyboard, parse_mode="Markdown"
     )
     await callback.answer()
@@ -216,24 +216,35 @@ async def buy_with_balance(callback: CallbackQuery):
     data = NUMBERS_STORE.get(num_id)
     
     if not data or data["sold"]:
-        await callback.answer("هذا الرقم تم تجريب حسابه مسبقاً!", show_alert=True)
+        await callback.answer("عذراً، الرقم تم بيعه بالفعل!", show_alert=True)
         return
         
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    balance = cursor.fetchone()[0]
+    
+    if balance < data["price"]:
+        await callback.answer("❌ رصيدك غير كافٍ لشراء هذا الرقم!", show_alert=True)
+        return
+
+    # خصم الرصيد وتحديث حالة الرقم
+    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (data["price"], user_id))
+    conn.commit()
+    
     NUMBERS_STORE[num_id]["sold"] = True
     NUMBERS_STORE[num_id]["buyer_id"] = user_id
     
-    await callback.answer("⏳ جاري جلب كود التحقق من الجلسة...", show_alert=False)
+    await callback.answer("⏳ جاري جلب كود التفعيل...", show_alert=False)
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     success_msg = (
-        f"✅ **تم الشراء التجريبي بنجاح!**\n\n"
-        f"📱 **الرقم التجريبي:** `{data['phone']}` ({data['name']})\n"
-        f"💵 **السعر:** $0.00\n\n"
-        f"📥 **نتيجة فحص الجلسة / الكود:**\n`{otp_text}`"
+        f"✅ **تم الشراء بنجاح!**\n\n"
+        f"📱 **الرقم:** `{data['phone']}`\n"
+        f"💵 **الخصم:** ${data['price']:.2f}\n\n"
+        f"📥 **كود التحقق (OTP):**\n`{otp_text}`"
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 تحديث وجلب كود جديد (OTP)", callback_data=f"get_otp_{num_id}")],
+        [InlineKeyboardButton(text="🔄 جلب كود جديد (OTP)", callback_data=f"get_otp_{num_id}")],
         [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
     ])
     
@@ -246,11 +257,11 @@ async def get_otp_callback(callback: CallbackQuery):
     if not data:
         await callback.answer("الرقم غير موجود!", show_alert=True)
         return
-    await callback.answer("⏳ جاري الاتصال بتيليجرام...", show_alert=False)
+    await callback.answer("⏳ جاري الاتصال وتحديث الكود...", show_alert=False)
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 تحديث وجلب كود جديد (OTP)", callback_data=f"get_otp_{num_id}")],
+        [InlineKeyboardButton(text="🔄 تحديث الكود (OTP)", callback_data=f"get_otp_{num_id}")],
         [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
     ])
     
@@ -268,8 +279,8 @@ async def recharge_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
     await callback.message.edit_text(
-        "💳 **تجربة شحن النجوم:**\n\n"
-        "أرسل عدد النجوم لتجربة إنشاء الفاتورة (مثلاً `1` أو `5`):",
+        "💳 **شحن الرصيد عبر النجوم:**\n\n"
+        "أرسل عدد النجوم التي تريد شراءها لشحن رصيدك (مثال: `10` أو `50`):",
         reply_markup=keyboard, parse_mode="Markdown"
     )
     await callback.answer()
@@ -277,20 +288,20 @@ async def recharge_menu(callback: CallbackQuery, state: FSMContext):
 @dp.message(States.waiting_for_stars_count)
 async def process_custom_stars_input(message: Message, state: FSMContext):
     if not message.text.strip().isdigit():
-        await message.answer("❌ أرسل رقماً صحيحاً فقط:")
+        await message.answer("❌ يرجى إدخال أرقام فقط:")
         return
     stars_count = int(message.text.strip())
-    prices = [LabeledPrice(label=f"Test {stars_count} Stars", amount=stars_count)]
+    prices = [LabeledPrice(label=f"شحن {stars_count} نجمة", amount=stars_count)]
     await state.clear()
     await bot.send_invoice(
         chat_id=message.chat.id,
-        title=f"تجربة شحن ({stars_count} نجمة)",
-        description=f"فاتورة تجريبية لشحن النجوم",
-        payload=f"test_stars_{stars_count}",
+        title=f"شحن رصيد ({stars_count} نجمة)",
+        description=f"فاتورة شحن رصيدك داخل البوت عبر نجوم تليجرام",
+        payload=f"recharge_stars_{stars_count}",
         provider_token="",
         currency="XTR",
         prices=prices,
-        start_parameter="test-stars"
+        start_parameter="stars-recharge"
     )
 
 @dp.callback_query(F.data == "my_account")
@@ -299,15 +310,28 @@ async def my_account(callback: CallbackQuery):
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     balance = cursor.fetchone()[0]
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text(f"⚡ **حسابك التجريبي:**\n\n🆔 المعرف: `{user_id}`\n💵 الرصيد: `${balance:.2f}`", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(f"⚡ **تفاصيل حسابك:**\n\n🆔 المعرف: `{user_id}`\n💵 الرصيد المتاح: `${balance:.2f}`", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "claim_bonus")
 async def claim_bonus(callback: CallbackQuery):
     user_id = callback.from_user.id
-    cursor.execute("UPDATE users SET balance = balance + 1.00 WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT last_bonus, balance FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    last_bonus_str = row[0]
+    balance = row[1]
+    
+    now = datetime.now()
+    if last_bonus_str:
+        last_bonus = datetime.fromisoformat(last_bonus_str)
+        if now - last_bonus < timedelta(hours=24):
+            await callback.answer("❌ لقد حصلت على هديتك اليومية بالفعل، عد غداً!", show_alert=True)
+            return
+
+    bonus_amount = 0.10
+    cursor.execute("UPDATE users SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (bonus_amount, now.isoformat(), user_id))
     conn.commit()
-    await callback.answer("🎉 تم منحك 1 دولار تجريبي!", show_alert=True)
+    await callback.answer(f"🎉 تم إضافة ${bonus_amount:.2f} إلى رصيدك كهدية يومية!", show_alert=True)
     text, keyboard = get_main_keyboard(user_id)
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -319,24 +343,24 @@ async def ref_menu(callback: CallbackQuery):
     bot_info = await bot.get_me()
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{callback.from_user.id}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text(f"🤝 **رابط الإحالة التجريبي:**\n`{ref_link}`", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(f"🤝 **رابط الإحالة الخاص بك:**\n`{ref_link}`\n\nشاركه مع أصدقائك للحصول على رصيد مجاني!", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "transfer_menu")
 async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_transfer_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text("💳 أرسل (User ID) للشخص المراد تحويل رصيد تجريبي له:", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text("💳 أرسل آيدي (User ID) الشخص المراد تحويل الرصيد له:", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.message(States.waiting_for_transfer_id)
 async def process_transfer_id(message: Message, state: FSMContext):
     if not message.text.strip().isdigit():
-        await message.answer("❌ أرسل ID صحيح:")
+        await message.answer("❌ يرجى إدخال ID صحيح:")
         return
     await state.update_data(recipient_id=int(message.text.strip()))
     await state.set_state(States.waiting_for_transfer_amount)
-    await message.answer("✍️ أرسل المبلغ المراد تحويله للتجربة:")
+    await message.answer("✍️ أرسل المبلغ المراد تحويله:")
 
 @dp.message(States.waiting_for_transfer_amount)
 async def process_transfer_amount(message: Message, state: FSMContext):
@@ -345,15 +369,24 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ أدخل مبلغاً صحيحاً:")
         return
+    
+    sender_id = message.from_user.id
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (sender_id,))
+    sender_balance = cursor.fetchone()[0]
+    
+    if sender_balance < amount:
+        await message.answer("❌ رصيدك الحالي لا يكفي لإتمام عملية التحويل!")
+        await state.clear()
+        return
+
     data = await state.get_data()
     recipient_id = data.get("recipient_id")
-    sender_id = message.from_user.id
     
     cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, sender_id))
     cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, recipient_id))
     conn.commit()
     await state.clear()
-    await message.answer(f"✅ تم تحويل `${amount:.2f}` تجريبياً بنجاح!", parse_mode="Markdown")
+    await message.answer(f"✅ تم تحويل `${amount:.2f}` بنجاح للمستخدم `{recipient_id}`!", parse_mode="Markdown")
 
 async def fetch_otp_async(session_str, api_id, api_hash):
     if not session_str:
@@ -363,17 +396,17 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         await client.connect()
         if not await client.is_user_authorized():
             await client.disconnect()
-            return "الجلسة منتهية أو تم تسجيل الخروج منها ❌"
+            return "الجلسة منتهية أو تم الحظر ❌"
         messages = await client.get_messages(777000, limit=1)
         await client.disconnect()
         if not messages:
-            return "لا توجد رسائل كود بعد ⏳ (يرجى طلب الكود من التيليجرام أولاً ثم الضغط على تحديث)"
+            return "لم يصل كود التفعيل بعد ⏳ (اطلب الكود ثم اضغط تحديث)"
         return messages[0].message
     except Exception as e:
         return f"خطأ في الاتصال: {str(e)}"
 
 async def main():
-    print("شحن بوت التجارب...")
+    print("جاري تشغيل بوت الأرقام الأساسي...")
     try:
         await bot.delete_webhook(drop_pending_updates=True)
     except Exception:
