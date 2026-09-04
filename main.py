@@ -16,7 +16,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 
 # ================= إعدادات بوت التجارب =================
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_توكن_البوت_الجديد_هنا")
+BOT_TOKEN = "8607094831:AAEsDwAWm8RddXiEGQEUF9aR94-7NT6Ju4E"
 ADMIN_USERNAME = "diddy0"
 
 # الاشتراك الإجباري
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# ================= مستودع الأرقام (تمت إضافة وسم غير سليم للرقم 244) =================
+# ================= مستودع الأرقام (تم توضيح الرقم السليم وغير السليم) =================
 NUMBERS_STORE = {
     "1": {
         "country": "usa", 
@@ -92,7 +92,7 @@ def get_main_keyboard(user_id):
     text_header = (
         "🧪 **بوت التجارب والاختبار** 🌐\n\n"
         "• الأرقام مجانية للتجربة فقط ($0.00).\n"
-        "• الرقم الذي ينتهي بـ 244 موضح عليه أنه غير سليم للتجربة.\n\n"
+        "• يمكنك اختيار الرقم المراد تجريبه (السليم أو الغير سليم).\n\n"
         f"🆔 المعرف: `{user_id}`\n"
         f"💵 الرصيد: `${balance:.2f}`\n\n"
         "اختر ما تريد تجريبه 👇"
