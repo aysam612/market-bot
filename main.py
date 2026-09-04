@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, 
-    LabeledPrice, BotCommand
+    LabeledPrice, PreCheckoutQuery
 )
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -27,6 +27,9 @@ USA_NUMBER_PRICE = 0.50
 
 # قيمة الهدية اليومية والإحالة (سنت واحد)
 BONUS_AMOUNT = 0.01
+
+# سعر النجمة الواحدة بالدولار (2 سنت)
+STAR_PRICE_USD = 0.02
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -54,7 +57,7 @@ conn.commit()
 NUMBERS_STORE = {
     "1": {
         "country": "usa", 
-        "name": "🇺🇸 أمريكا", 
+        "name": "🇺🇸 أمريكا (غير سليمين)", 
         "price": USA_NUMBER_PRICE, 
         "phone": "+13025060244",
         "session": "1AZWarzYBu4DsJhY23nLFER2qDvE9lqCBXrQ27HVWKLqXChIJflm3zoBMhdsya9NdpEfChtBNOBW7PLtdyciAT5rXmZKBC7ky85O3NzH_DWwHs-K_Jrqal9vPyPawIjgq0S3wEumn2ntGrXL3sZObdteRHVh5M-1mdnW7_vIa7W3DQk00P_k7e595JFTtY0kvbC5CeI4yTswQ0ZFxBDgMtH099iKenqtEB6K3-somzxxNiZaPTMl_XYJCNmaBfOA_f-tIb_I1jjekQ-hVeKLh9d5hP2b-05rH1cuqb92EZGWMNm6Wy3KW86nGC7ShF3Cum5yoYlwbj-By4R8XlI3otfuyOvFz5Io=",
@@ -65,7 +68,7 @@ NUMBERS_STORE = {
     },
     "2": {
         "country": "usa", 
-        "name": "🇺🇸 أمريكا", 
+        "name": "🇺🇸 أمريكا (غير سليمين)", 
         "price": USA_NUMBER_PRICE, 
         "phone": "+13649004531",
         "session": "1AZWarzYBu2uAspmH_zOu7qW53ONrFQw6vhIypDVm5N9LMiUAmBhkON--qPfBcT83HDjTJUeBWNJQ0UELHaLo0xnDnVi3MTm9ZyaGlIO-h5P2LH7OB1jghSFqD_ysUgbUagvN6p8BElr4gmVNO2L5I5sOL52rzHHwbcRCKB-DQvrXH3D7X7yBUXT7UZ8kKs0Ve_926fUoLoUzI1UBvGmdP5Gd8cYHmZJiDjUxFkALKNHlexdJToWLiY-svegkzXGq1ICBjaGGNCMAk__P1-W-HvRv2NbTfX3SDaPFzitNJzqRfxFDf8tysezYXHnzRbBz4cvqEQqcSVrTwvwI6kW7h5uA8Pz2zk0=",
@@ -181,45 +184,33 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
 async def buy_number_menu(callback: CallbackQuery):
     available_usa = sum(1 for d in NUMBERS_STORE.values() if d["country"] == "usa" and not d["sold"])
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🇺🇸 أرقام أمريكا ({available_usa}) - ${USA_NUMBER_PRICE:.2f}", callback_data="buy_country_usa")],
+        [InlineKeyboardButton(text=f"🇺🇸 أمريكا (غير سليمين) ({available_usa}) - ${USA_NUMBER_PRICE:.2f}", callback_data="buy_country_usa")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
     await callback.message.edit_text("🌍 **اختر الدولة لشراء رقم:**", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
+# شراء عشوائي مباشر عند اختيار الدولة
 @dp.callback_query(F.data == "buy_country_usa")
 async def buy_country_usa_handler(callback: CallbackQuery):
-    available_buttons = []
-    for nid, d in NUMBERS_STORE.items():
-        if d["country"] == "usa" and not d["sold"]:
-            btn_text = f"{d['name']} - {d['phone']}"
-            available_buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"select_num_{nid}")])
-            
-    if not available_buttons:
+    available_ids = [nid for nid, d in NUMBERS_STORE.items() if d["country"] == "usa" and not d["sold"]]
+    
+    if not available_ids:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]])
         await callback.message.edit_text("للأسف نفدت الأرقام المتوفرة حالياً 🔴", reply_markup=keyboard, parse_mode="Markdown")
         await callback.answer()
         return
 
-    available_buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=available_buttons)
-    await callback.message.edit_text("اختر الرقم الذي تفضل شراءه:", reply_markup=keyboard, parse_mode="Markdown")
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("select_num_"))
-async def select_number_handler(callback: CallbackQuery):
-    num_id = callback.data.replace("select_num_", "")
-    data = NUMBERS_STORE.get(num_id)
-    if not data or data["sold"]:
-        await callback.answer("هذا الرقم لم يعد متاحاً!", show_alert=True)
-        return
+    # اختيار رقم عشوائي تلقائياً
+    num_id = random.choice(available_ids)
+    data = NUMBERS_STORE[num_id]
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"شراء من الرصيد (${data['price']:.2f})", callback_data=f"buy_balance_{num_id}")],
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_country_usa")]
+        [InlineKeyboardButton(text=f"تأكيد الشراء من الرصيد (${data['price']:.2f})", callback_data=f"buy_balance_{num_id}")],
+        [InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]
     ])
     await callback.message.edit_text(
-        f"الدولة: {data['name']}\nالسعر: ${data['price']:.2f}\nالرقم: `{data['phone']}`\n\nتأكيد عملية الشراء؟",
+        f"الدولة: {data['name']}\nالسعر: ${data['price']:.2f}\n\nسيتم اختيار رقم لك تلقائياً عند تأكيد الشراء.\nتأكيد عملية الشراء؟",
         reply_markup=keyboard, parse_mode="Markdown"
     )
     await callback.answer()
@@ -231,7 +222,7 @@ async def buy_with_balance(callback: CallbackQuery):
     data = NUMBERS_STORE.get(num_id)
     
     if not data or data["sold"]:
-        await callback.answer("عذراً، الرقم تم بيعه بالفعل!", show_alert=True)
+        await callback.answer("عذراً، الرقم تم بيعه لمستخدم آخر! حاول مجدداً.", show_alert=True)
         return
         
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
@@ -241,7 +232,7 @@ async def buy_with_balance(callback: CallbackQuery):
         await callback.answer("❌ رصيدك غير كافٍ لشراء هذا الرقم!", show_alert=True)
         return
 
-    # خصم سعر الرقم فقط والاحتفاظ بالمتبقي دون تصفير
+    # خصم سعر الرقم فقط والاحتفاظ بالمتبقي
     cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (data["price"], user_id))
     conn.commit()
     
@@ -253,10 +244,10 @@ async def buy_with_balance(callback: CallbackQuery):
     
     success_msg = (
         f"✅ **تم الشراء بنجاح!**\n\n"
-        f"📱 **الرقم:** `{data['phone']}`\n"
+        f"📱 **الرقم المخصص لك:** `{data['phone']}`\n"
         f"💵 **الخصم:** ${data['price']:.2f}\n\n"
         f"📥 **كود التحقق (OTP):**\n`{otp_text}`\n\n"
-        f"💡 **ملاحظة:** قم بطلب كود التفعيل في تطبيق تيليجرام أولاً، ثم اضغط على زر **(🔄 تحديث الكود)** بالأسفل ليظهر لك الكود فوراً."
+        f"💡 **ملاحظة هامّة جداً:**\nقم بطلب كود التفعيل داخل تطبيق تيليجرام أولاً، ثم اضغط على زر **(🔄 تحديث الكود)** بالأسفل ليظهر لك الكود فوراً."
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -296,8 +287,9 @@ async def recharge_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
     await callback.message.edit_text(
-        "💳 **شحن الرصيد عبر النجوم:**\n\n"
-        "أرسل عدد النجوم التي تريد شراءها لشحن رصيدك (مثال: `10` أو `50`):",
+        "💳 **شحن الرصيد عبر نجوم تليجرام:**\n\n"
+        "🌟 **سعر الشحن:** كل 1 نجمة = 0.02$ (2 سنت)\n\n"
+        "أرسل عدد النجوم التي تريد شراءها (مثال: `10` أو `50`):",
         reply_markup=keyboard, parse_mode="Markdown"
     )
     await callback.answer()
@@ -308,18 +300,37 @@ async def process_custom_stars_input(message: Message, state: FSMContext):
         await message.answer("❌ يرجى إدخال أرقام فقط:")
         return
     stars_count = int(message.text.strip())
-    prices = [LabeledPrice(label=f"شحن {stars_count} نجمة", amount=stars_count)]
+    added_balance = stars_count * STAR_PRICE_USD
+    
+    prices = [LabeledPrice(label=f"شحن {stars_count} نجمة (${added_balance:.2f})", amount=stars_count)]
     await state.clear()
     await bot.send_invoice(
         chat_id=message.chat.id,
         title=f"شحن رصيد ({stars_count} نجمة)",
-        description=f"فاتورة شحن رصيدك داخل البوت عبر نجوم تليجرام",
+        description=f"ستحصل على ${added_balance:.2f} رصيد داخل البوت مقابل {stars_count} نجمة.",
         payload=f"recharge_stars_{stars_count}",
         provider_token="",
         currency="XTR",
         prices=prices,
         start_parameter="stars-recharge"
     )
+
+@dp.pre_checkout_query()
+async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
+    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+@dp.message(F.successful_payment)
+async def process_successful_payment(message: Message):
+    payload = message.successful_payment.invoice_payload
+    if payload.startswith("recharge_stars_"):
+        stars_count = int(payload.replace("recharge_stars_", ""))
+        added_balance = stars_count * STAR_PRICE_USD
+        user_id = message.from_user.id
+        
+        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (added_balance, user_id))
+        conn.commit()
+        
+        await message.answer(f"🎉 **تم الشحن بنجاح!**\nتم إضافة `${added_balance:.2f}` إلى رصيدك مقابل `{stars_count}` نجمة.", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "my_account")
 async def my_account(callback: CallbackQuery):
