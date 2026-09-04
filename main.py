@@ -16,7 +16,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 
 # ================= إعدادات البوت =================
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXvSih9YaE")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8947041920:AAFF8llkbKrI8WqBowy1IEjC8kso8ya7NJQ")
 ADMIN_USERNAME = "diddy0"
 
 USA_NUMBER_PRICE = 0.80
@@ -365,7 +365,7 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     await message.answer(
         f"✅ **تمت عملية التحويل بنجاح!**\n\n"
         f"💸 المبلغ المحول: `${amount:.2f}`\n"
-        f"👤 إلى المستخدم: `${recipient_id}`\n"
+        f"👤 إلى المستخدم: `{recipient_id}`\n"
         f"💰 رصيدك المتبقي: `${sender_balance - amount:.2f}`",
         parse_mode="Markdown"
     )
@@ -418,7 +418,7 @@ async def claim_bonus(callback: CallbackQuery):
     
     text, keyboard = get_main_keyboard(user_id)
     try:
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_Mode="Markdown")
     except Exception:
         pass
 
@@ -451,14 +451,11 @@ async def fetch_otp_async(session_str, api_id, api_hash):
 
 async def main():
     print("Starting X9 Store Bot...")
-    
-    # ⚡ الحل الجذري لمشكلة تضارب الاتصالات: حذف الويب هوك والتحديثات المعلقة بقوة
     try:
         await bot.delete_webhook(drop_pending_updates=True)
     except Exception:
         pass
     
-    # انتظار قصير لضمان تحرير التوكن على سيرفرات تيليجرام
     await asyncio.sleep(2)
     
     commands = [
@@ -469,7 +466,6 @@ async def main():
     except Exception:
         pass
     
-    # تشغيل البوت وإغلاق أي جلسة سابقة تلقائياً
     await dp.start_polling(bot, close_bot_session=True)
 
 if __name__ == "__main__":
