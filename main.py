@@ -19,16 +19,17 @@ from telethon.sessions import StringSession
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXvSih9YaE")
 ADMIN_USERNAME = "diddy0"
 
-# سعر النجمة الواحدة بالدولار (2 سنت) للشحن فقط
-STAR_PRICE_USD = 0.02
-# سعر الرقم الأمريكي (80 سنت)
+# كل نجمة واحدة = 2 سنت (0.02 دولار)
+# سعر الرقم الأمريكي 80 سنت = يحتاج 40 نجمة
 USA_NUMBER_PRICE = 0.80
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-class RechargeStates(StatesGroup):
+class States(StatesGroup):
     waiting_for_stars_count = State()
+    waiting_for_transfer_id = State()
+    waiting_for_transfer_amount = State()
 
 # ================= قاعدة البيانات =================
 conn = sqlite3.connect("database.db", check_same_thread=False)
@@ -44,7 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# ================= مستودع الأرقام (الأرقام الأمريكية بسعر 80 سنت) =================
+# ================= مستودع الأرقام =================
 NUMBERS_STORE = {
     "1": {
         "country": "usa", "name": "🇺🇸 أمريكا", "price": USA_NUMBER_PRICE, "phone": "+13025060244",
@@ -66,8 +67,8 @@ def get_main_keyboard(user_id):
     text_header = (
         "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
         "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
-        "• الشراء فوري وعشوائي وسريع عبر رصيدك المجمع أو نجوم تليجرام (Stars ⭐).\n"
-        "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
+        "• الشراء فوري وسريع عبر رصيدك المجمع أو نجوم تليجرام (**كل نجمة وحدة = 2 سنت ⭐**).\n"
+        "• إمكانية طلب كود التحقق (OTP) وبكل سهولة بعد الشراء.\n\n"
         f"🆔 `{user_id}`\n"
         f"💵 `${balance:.2f}`\n\n"
         "اختر ما يناسبك من القائمة 👇"
@@ -130,7 +131,7 @@ async def buy_number_menu(callback: CallbackQuery):
     available_usa = sum(1 for d in NUMBERS_STORE.values() if d["country"] == "usa" and not d["sold"])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🇺🇸 أمريكا ({available_usa}) - ${USA_NUMBER_PRICE}", callback_data="buy_country_usa")],
+        [InlineKeyboardButton(text=f"🇺🇸 أمريكا ({available_usa}) - ${USA_NUMBER_PRICE} (40 نجمة)", callback_data="buy_country_usa")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
     await callback.message.edit_text("🌍 **اختر الدولة المتاحة:**", reply_markup=keyboard, parse_mode="Markdown")
@@ -156,7 +157,7 @@ async def buy_country_usa_handler(callback: CallbackQuery):
     
     await callback.message.edit_text(
         f" الدولة: {data['name']}\n"
-        f" السعر: ${data['price']} (يتم الخصم من رصيدك المجمع)\n\n"
+        f" السعر: ${data['price']} (يعادل **40 نجمة** لأن كل نجمة وحدة = 2 سنت)\n\n"
         f"اختر اتمام الشراء:",
         reply_markup=keyboard,
         parse_mode="Markdown"
@@ -178,7 +179,7 @@ async def buy_with_balance(callback: CallbackQuery):
     balance = row[0] if row else 0.0
     
     if balance < data["price"]:
-        await callback.answer(f"❌ رصيدك غير كافي (${balance:.2f}). يرجى شحن رصيدك أو جمع سنتات عبر الإحالة!", show_alert=True)
+        await callback.answer(f"❌ رصيدك غير كافي (${balance:.2f}). يرجى شحن رصيدك (لشراء رقم بـ 80 سنت تحتاج لشحن 40 نجمة)!", show_alert=True)
         return
         
     new_balance = balance - data["price"]
@@ -223,26 +224,28 @@ async def get_otp_callback(callback: CallbackQuery):
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     await callback.answer(f"الكود الحالي: {otp_text}", show_alert=True)
 
+# ================= قسم شحن الرصيد بالنجوم =================
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(RechargeStates.waiting_for_stars_count)
+    await state.set_state(States.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 رجوع للقائمة الرئيسية", callback_data="main_menu")]
     ])
     await callback.message.edit_text(
-        "💳 **شحن الرصيد المخصص بالنجوم:**\n\n"
-        "• ملاحظة: سعر النجمة الواحدة هو **2 سنت**.\n\n"
-        "✍️ **أرسل الآن في الشات عدد النجوم التي تريد شحنها** (أرسل رقماً فقط، مثلاً: `10` أو `40` لشراء رقم أمريكي):",
+        "💳 **شحن الرصيد بواسطة نجوم تليجرام:**\n\n"
+        "⭐ **قيمة التحويل:** `كل نجمة وحدة = 2 سنت`\n"
+        "💡 *(مثال: لشحن 0.80$ سعر الرقم الأمريكي، أرسل 40 نجمة)*\n\n"
+        "✍️ **أرسل الآن في الشات عدد النجوم التي تريد شحنها** (أرسل رقماً صحيحاً فقط، مثل: `40`):",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
     await callback.answer()
 
-@dp.message(RechargeStates.waiting_for_stars_count)
+@dp.message(States.waiting_for_stars_count)
 async def process_custom_stars_input(message: Message, state: FSMContext):
     text = message.text.strip()
     if not text.isdigit():
-        await message.answer("❌ يرجى إرسال رقم صحيح فقط لعدد النجوم (مثلاً: 10 أو 40):")
+        await message.answer("❌ يرجى إرسال رقم صحيح فقط لعدد النجوم (مثلاً: 40):")
         return
         
     stars_count = int(text)
@@ -250,19 +253,20 @@ async def process_custom_stars_input(message: Message, state: FSMContext):
         await message.answer("❌ يرجى إرسال رقم أكبر من الصفر:")
         return
         
-    total_cents = stars_count * 2
+    total_cents = stars_count * 2 # كل نجمة وحدة = 2 سنت
+    added_usd = total_cents / 100
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"⭐ ادفع {stars_count} نجمة (${total_cents / 100:.2f})", callback_data=f"pay_custom_star_{stars_count}")],
+        [InlineKeyboardButton(text=f"⭐ ادفع {stars_count} نجمة (${added_usd:.2f})", callback_data=f"pay_custom_star_{stars_count}")],
         [InlineKeyboardButton(text="🔙 إلغاء والعودة", callback_data="main_menu")]
     ])
     
     await state.clear()
     await message.answer(
-        f"📊 **تفاصيل عملية الشحن المخصصة:**\n\n"
+        f"📊 **تفاصيل عملية الشحن:**\n\n"
         f"• عدد النجوم: `{stars_count} نجمة`\n"
-        f"• القيمة المضافة لرصيدك: `${total_cents / 100:.2f}`\n\n"
-        f"اضغط على زر الدفع أدناه لإتمام الشحنة بالنجوم 👇",
+        f"• الرصيد المضاف لحسابك: `${added_usd:.2f}` *(لأن كل نجمة وحدة = 2 سنت)*\n\n"
+        f"اضغط على زر الدفع أدناه لإتمام الفاتورة 👇",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
@@ -276,7 +280,7 @@ async def pay_custom_stars_invoice(callback: CallbackQuery):
     await bot.send_invoice(
         chat_id=callback.message.chat.id,
         title=f"شحن رصيد ({stars_count} نجمة)",
-        description=f"شحن رصيد بقيمة ${total_cents / 100:.2f} (كل نجمة = 2 سنت)",
+        description=f"شحن رصيد بقيمة ${(total_cents/100):.2f} (كل نجمة وحدة = 2 سنت)",
         payload=f"recharge_stars_{stars_count}",
         provider_token="",
         currency="XTR",
@@ -284,6 +288,100 @@ async def pay_custom_stars_invoice(callback: CallbackQuery):
         start_parameter=f"rech-{stars_count}"
     )
     await callback.answer()
+
+# ================= قسم تحويل الرصيد =================
+@dp.callback_query(F.data == "transfer_menu")
+async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(States.waiting_for_transfer_id)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 رجوع للقائمة الرئيسية", callback_data="main_menu")]
+    ])
+    await callback.message.edit_text(
+        "💳 **تحويل رصيد لمستخدم آخر:**\n\n"
+        "✍️ **أرسل الآن (معرف المستخدم - User ID) الخاص بالشخص** الذي تريد تحويل الرصيد إليه:",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@dp.message(States.waiting_for_transfer_id)
+async def process_transfer_id(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not text.isdigit():
+        await message.answer("❌ يرجى إرسال User ID صحيح ويكون أرقام فقط:")
+        return
+        
+    recipient_id = int(text)
+    if recipient_id == message.from_user.id:
+        await message.answer("❌ لا يمكنك تحويل رصيد لنفسك! أرسل ID شخص آخر:")
+        return
+        
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (recipient_id,))
+    if not cursor.fetchone():
+        await message.answer("❌ هذا المستخدم غير مسجل في البوت أو لم يقم بفتح البوت من قبل. أرسل ID صحيح:")
+        return
+        
+    await state.update_data(recipient_id=recipient_id)
+    await state.set_state(States.waiting_for_transfer_amount)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 إلغاء", callback_data="main_menu")]
+    ])
+    await message.answer(
+        f"✅ تم التعرف على المستخدم (`{recipient_id}`).\n\n"
+        "✍️ **الآن أرسل المبلغ بالدولار/السنتات الذي تريد تحويله** (مثلاً: `0.50` أو `1.00`):",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+@dp.message(States.waiting_for_transfer_amount)
+async def process_transfer_amount(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.strip().replace("$", ""))
+    except ValueError:
+        await message.answer("❌ يرجى إرسال قيمة صحيحة بالأرقام (مثلاً: `0.50`):")
+        return
+        
+    if amount <= 0:
+        await message.answer("❌ يجب أن يكون المبلغ أكبر من الصفر:")
+        return
+        
+    sender_id = message.from_user.id
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (sender_id,))
+    sender_balance = cursor.fetchone()[0]
+    
+    if sender_balance < amount:
+        await message.answer(f"❌ رصيدك الحالي (${sender_balance:.2f}) لا يكفي لإتمام عملية التحويل بقيمة (${amount:.2f}).")
+        await state.clear()
+        return
+        
+    data = await state.get_data()
+    recipient_id = data.get("recipient_id")
+    
+    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, sender_id))
+    cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, recipient_id))
+    conn.commit()
+    
+    await state.clear()
+    
+    await message.answer(
+        f"✅ **تمت عملية التحويل بنجاح!**\n\n"
+        f"💸 المبلغ المحول: `${amount:.2f}`\n"
+        f"👤 إلى المستخدم: `{recipient_id}`\n"
+        f"💰 رصيدك المتبقي: `${sender_balance - amount:.2f}`",
+        parse_mode="Markdown"
+    )
+    
+    try:
+        await bot.send_message(
+            recipient_id,
+            f"🎉 **لقد استلمت تحويل رصيد جديد!**\n\n"
+            f"💵 المبلغ: `${amount:.2f}`\n"
+            f"👤 من المستخدم: `${sender_id}`",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
 
 @dp.callback_query(F.data == "ref_menu")
 async def ref_menu(callback: CallbackQuery):
@@ -354,8 +452,7 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         return f"خطأ: {str(e)}"
 
 async def main():
-    print("Starting X9 Store Bot (Conflict Resolved)...")
-    # مسح أي اتصالات سابقة معلقة (Webhook أو GetUpdates) لحل مشكلة التعارض
+    print("Starting X9 Store Bot (Clear Star Ratio Added)...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
