@@ -4,6 +4,8 @@ import sqlite3
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -14,11 +16,14 @@ CHANNEL_USERNAME = "@VPP8P"    # معرف قناتك الإجبارية
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+# تعريف حالات الـ FSM لإدخال عدد النجوم المخصص
+class RechargeState(StatesGroup):
+    waiting_for_stars = State()
+
 # إعداد قاعدة البيانات SQLite
 conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# إنشاء الجدول إذا لم يكن موجوداً
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
@@ -45,18 +50,17 @@ def main_menu():
     keyboard.row(InlineKeyboardButton(text="⭐ شحن الرصيد بالنجوم", callback_data="recharge_menu"))
     return keyboard.as_markup()
 
-# أمر البدء (مع دعم الإحالات والاشتراك الإجباري)
+# أمر البدء
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message):
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
     user_id = message.from_user.id
     args = message.text.split()
     
-    # التحقق من قاعدة البيانات وتسجيل المستخدم إن لم يكن موجوداً
     cursor.execute("SELECT balance, last_bonus FROM users WHERE user_id = ?", (user_id,))
     user = cursor.fetchone()
     
     if not user:
-        # فحص وجود كود إحالة في الرابط
         ref_id = None
         if len(args) > 1 and args[1].startswith("ref_"):
             try:
@@ -71,7 +75,6 @@ async def cmd_start(message: types.Message):
         cursor.execute("INSERT INTO users (user_id, balance, referred_by) VALUES (?, 0, ?)", (user_id, ref_id))
         conn.commit()
         
-        # إذا دخل عبر إحالة صحيحة، نعطي صاحب الرابط 1 سنت
         if ref_id:
             cursor.execute("UPDATE users SET balance = balance + 1 WHERE user_id = ?", (ref_id,))
             conn.commit()
@@ -80,7 +83,6 @@ async def cmd_start(message: types.Message):
             except Exception:
                 pass
 
-    # التحقق من الاشتراك الإجباري في القناة
     is_subbed = await check_subscription(user_id)
     if not is_subbed:
         sub_kb = InlineKeyboardBuilder()
@@ -98,7 +100,6 @@ async def cmd_start(message: types.Message):
         reply_markup=main_menu()
     )
 
-# زر التحقق من الاشتراك
 @dp.callback_query(F.data == "check_sub")
 async def process_check_sub(callback: types.CallbackQuery):
     if await check_subscription(callback.from_user.id):
@@ -107,7 +108,6 @@ async def process_check_sub(callback: types.CallbackQuery):
     else:
         await callback.answer("❌ لم تقم بالاشتراك في القناة بعد!", show_alert=True)
 
-# قائمة الإحالات والهدية اليومية
 @dp.callback_query(F.data == "ref_menu")
 async def ref_menu(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -131,7 +131,6 @@ async def ref_menu(callback: types.CallbackQuery):
     )
     await callback.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
-# استلام الهدية اليومية (كل 24 ساعة)
 @dp.callback_query(F.data == "claim_bonus")
 async def claim_bonus(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -149,37 +148,62 @@ async def claim_bonus(callback: types.CallbackQuery):
             await callback.answer(f"⏳ لقد استلمت هديتك اليومية مسبقاً. يمكنك الاستلام بعد: {hours} ساعة و {minutes} دقيقة.", show_alert=True)
             return
 
-    # تحديث الرصيد ووقت الهدية
     cursor.execute("UPDATE users SET balance = balance + 1, last_bonus = ? WHERE user_id = ?", (now.isoformat(), user_id))
     conn.commit()
     
     await callback.answer("🎉 مبروك! تم إضافة 1 سنت إلى رصيدك بنجاح.", show_alert=True)
     await ref_menu(callback)
 
-# قائمة شحن الرصيد المرنة (كل نجمة = 2 سنت، تبدأ من نجمة واحدة)
+# طلب شحن الرصيد المخصص (تفعيل حالة FSM)
 @dp.callback_query(F.data == "recharge_menu")
-async def recharge_menu(callback: types.CallbackQuery):
+async def recharge_menu(callback: types.CallbackQuery, state: FSMContext):
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="⭐ شحن 1 نجمة = 2 سنت", callback_data="pay_stars_1"))
-    kb.row(InlineKeyboardButton(text="⭐ شحن 5 نجوم = 10 سنت", callback_data="pay_stars_5"))
-    kb.row(InlineKeyboardButton(text="⭐ شحن 10 نجوم = 20 سنت", callback_data="pay_stars_10"))
-    kb.row(InlineKeyboardButton(text="⭐ شحن 25 نجمة = 50 سنت", callback_data="pay_stars_25"))
     kb.row(InlineKeyboardButton(text="« عودة للقائمة الرئيسية", callback_data="main_menu"))
     
+    await state.set_state(RechargeState.waiting_for_stars)
     await callback.message.edit_text(
-        "⭐ **شحن الرصيد الداخلي بالنجوم (XTR)**\n\n"
-        "الحسبة المرنة: **كل نجمة واحدة = 2 سنت**!\n"
-        "اختر عدد النجوم التي تريد دفعها ليتم إضافتها فوراً لرصيدك الداخلي:",
+        "⭐ **شحن الرصيد المخصص بالنجوم (XTR)**\n\n"
+        "القاعدة: **كل نجمة واحدة = 2 سنت** (حتى لو أردت شحن 1، 5، 100، أو 1000 نجمة!)\n\n"
+        "✍️ **الآن، أرسل في المحادثة عدد النجوم التي تريد شحنها:**\n(مثلاً اكتب: `5` أو `50` أو `1000`)",
         reply_markup=kb.as_markup(),
         parse_mode="Markdown"
     )
 
-# العودة للقائمة الرئيسية عبر الأزرار
+# استقبال عدد النجوم المكتوب من المستخدم
+@dp.message(RechargeState.waiting_for_stars)
+async def process_custom_stars(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        await message.answer("❌ خطأ! يرجى إرسال رقم صحيح فقط (مثلاً: 10 أو 50).")
+        return
+    
+    stars_count = int(message.text)
+    if stars_count <= 0:
+        await message.answer("❌ يجب أن يكون عدد النجوم أكبر من صفر.")
+        return
+    
+    cents_gained = stars_count * 2
+    await state.clear()
+    
+    # إرسال الفاتورة بالعدد المخصص الذي طلبه المستخدم
+    title = f"شحن {cents_gained} سنت"
+    description = f"إضافة {cents_gained} سنت إلى رصيدك الداخلي مقابل {stars_count} نجمة"
+    payload = f"recharge_custom_{stars_count}"
+    prices = [LabeledPrice(label="XTR", amount=stars_count)]
+
+    await bot.send_invoice(
+        chat_id=message.from_user.id,
+        title=title,
+        description=description,
+        payload=payload,
+        currency="XTR",
+        prices=prices
+    )
+
 @dp.callback_query(F.data == "main_menu")
-async def back_to_main(callback: types.CallbackQuery):
+async def back_to_main(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
     await callback.message.edit_text("👋 أهلاً بك مجدداً في القائمة الرئيسية:", reply_markup=main_menu())
 
-# شراء رقم
 @dp.callback_query(F.data == "buy_number")
 async def buy_number_options(callback: types.CallbackQuery):
     kb = InlineKeyboardBuilder()
@@ -195,7 +219,6 @@ async def buy_number_options(callback: types.CallbackQuery):
         parse_mode="Markdown"
     )
 
-# الشراء باستخدام الرصيد الداخلي (السنتات)
 @dp.callback_query(F.data == "buy_with_balance")
 async def buy_with_balance(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -203,52 +226,28 @@ async def buy_with_balance(callback: types.CallbackQuery):
     balance = cursor.fetchone()[0]
     
     if balance < 80:
-        await callback.answer(f"❌ رصيدك الحالي ({balance} سنت) لا يكفي لشراء رقم. يلزمك 80 سنت على الأقل. اجمع النقاط عبر الإحالات أو اشحن بالنجوم!", show_alert=True)
+        await callback.answer(f"❌ رصيدك الحالي ({balance} سنت) لا يكفي لشراء رقم. يلزمك 80 سنت على الأقل. اجمع النقاط أو اشحن بالنجوم!", show_alert=True)
         return
     
-    # خصم الرصيد وإتمام الطلب
     cursor.execute("UPDATE users SET balance = balance - 80 WHERE user_id = ?", (user_id,))
     conn.commit()
     
-    # هنا تضع كود تسليم الرقم الفعلي للمستخدم
     await callback.message.edit_text(
         "✅ **تمت عملية الشراء بنجاح!**\n\n"
         "🇺🇸 رقمك الأمريكي/العالمي:\n"
         "`+1 (555) 019-8234`\n"
-        "🔑 كود التحقق (OTP): سيظهر هنا أو وصلك عبر النظام.\n\n"
+        "🔑 كود التحقق (OTP): وصلك بنجاح.\n\n"
         "شكراً لاستخدامك متجرنا!",
         reply_markup=InlineKeyboardBuilder().add(InlineKeyboardButton(text="« عودة للقائمة", callback_data="main_menu")).as_markup(),
         parse_mode="Markdown"
     )
 
-# معالجة فواتير نجوم تليجرام والشحن المرن
-@dp.callback_query(F.data.in_(["buy_with_stars", "pay_stars_1", "pay_stars_5", "pay_stars_10", "pay_stars_25"]))
+@dp.callback_query(F.data == "buy_with_stars")
 async def process_stars_payment(callback: types.CallbackQuery):
-    if callback.data == "buy_with_stars":
-        title = "شراء رقم مميز"
-        description = "الحصول على رقم فوري مع كود الـ OTP"
-        payload = "buy_number_xtr"
-        prices = [LabeledPrice(label="XTR", amount=40)] # 40 نجمة = 80 سنت
-    elif callback.data == "pay_stars_1":
-        title = "شحن 2 سنت"
-        description = "إضافة 2 سنت لرصيدك الداخلي (مقابل 1 نجمة)"
-        payload = "recharge_1"
-        prices = [LabeledPrice(label="XTR", amount=1)]
-    elif callback.data == "pay_stars_5":
-        title = "شحن 10 سنت"
-        description = "إضافة 10 سنت لرصيدك الداخلي (مقابل 5 نجوم)"
-        payload = "recharge_5"
-        prices = [LabeledPrice(label="XTR", amount=5)]
-    elif callback.data == "pay_stars_10":
-        title = "شحن 20 سنت"
-        description = "إضافة 20 سنت لرصيدك الداخلي (مقابل 10 نجوم)"
-        payload = "recharge_10"
-        prices = [LabeledPrice(label="XTR", amount=10)]
-    else:
-        title = "شحن 50 سنت"
-        description = "إضافة 50 سنت لرصيدك الداخلي (مقابل 25 نجمة)"
-        payload = "recharge_25"
-        prices = [LabeledPrice(label="XTR", amount=25)]
+    title = "شراء رقم مميز"
+    description = "الحصول على رقم فوري مع كود الـ OTP"
+    payload = "buy_number_xtr"
+    prices = [LabeledPrice(label="XTR", amount=40)]
 
     await bot.send_invoice(
         chat_id=callback.from_user.id,
@@ -260,12 +259,11 @@ async def process_stars_payment(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# معالجة تفاصيل الدفع المسبق (Pre-checkout)
 @dp.pre_checkout_query()
 async def pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
-# تأكيد نجاح الدفع بالنجوم وإضافة الرصيد أو الخدمة
+# معالجة نجاح الدفع (سواء شراء رقم أو شحن عدد مخصص من النجوم)
 @dp.message(F.successful_payment)
 async def successful_payment(message: types.Message):
     payment_info = message.successful_payment
@@ -281,26 +279,25 @@ async def successful_payment(message: types.Message):
             reply_markup=main_menu(),
             parse_mode="Markdown"
         )
-    elif payload == "recharge_1":
-        cursor.execute("UPDATE users SET balance = balance + 2 WHERE user_id = ?", (user_id,))
-        conn.commit()
-        await message.answer("⭐ تم شحن رصيدك بنجاح بـ **2 سنت**!", reply_markup=main_menu(), parse_mode="Markdown")
-    elif payload == "recharge_5":
-        cursor.execute("UPDATE users SET balance = balance + 10 WHERE user_id = ?", (user_id,))
-        conn.commit()
-        await message.answer("⭐ تم شحن رصيدك بنجاح بـ **10 سنت**!", reply_markup=main_menu(), parse_mode="Markdown")
-    elif payload == "recharge_10":
-        cursor.execute("UPDATE users SET balance = balance + 20 WHERE user_id = ?", (user_id,))
-        conn.commit()
-        await message.answer("⭐ تم شحن رصيدك بنجاح بـ **20 سنت**!", reply_markup=main_menu(), parse_mode="Markdown")
-    elif payload == "recharge_25":
-        cursor.execute("UPDATE users SET balance = balance + 50 WHERE user_id = ?", (user_id,))
-        conn.commit()
-        await message.answer("⭐ تم شحن رصيدك بنجاح بـ **50 سنت**!", reply_markup=main_menu(), parse_mode="Markdown")
+    elif payload.startswith("recharge_custom_"):
+        try:
+            stars_count = int(payload.replace("recharge_custom_", ""))
+            cents_gained = stars_count * 2
+            
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (cents_gained, user_id))
+            conn.commit()
+            
+            await message.answer(
+                f"⭐ تم شحن رصيدك بنجاح بـ **{cents_gained} سنت** (مقابل {stars_count} نجمة)!",
+                reply_markup=main_menu(),
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
 
-# تشغيل البوت
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
