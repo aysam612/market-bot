@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
-# ================= إعدادات البوت والحماية =================
+# ================= إعدادات البوت =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8947041920:AAFF8llkbKrI8WqBowy1IEjC8kso8ya7NJQ")
 ADMIN_USERNAME = "diddy0"
 
@@ -31,8 +31,7 @@ class States(StatesGroup):
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
 
-# ================= قاعدة البيانات المؤمنة ضد الاختراق والتلاعب =================
-# استخدام check_same_thread=False مع نظام قفل للعمليات لمنع أي ثغرات تلاعب متزامنة
+# ================= قاعدة البيانات المؤمّنة (محمية ضد التصفير نهائياً) =================
 conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -46,7 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# تأمين الأعمدة وحمايتها من التصفير أو الحذف
+# حماية الأعمدة لمنع إعادة التنشيط أو مسح البيانات
 try:
     cursor.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0.0")
     cursor.execute("ALTER TABLE users ADD COLUMN last_bonus TEXT")
@@ -55,7 +54,7 @@ try:
 except sqlite3.OperationalError:
     pass
 
-# ================= مستودع الأرقام الآمن =================
+# ================= مستودع الأرقام =================
 NUMBERS_STORE = {
     "1": {
         "country": "usa", "name": "🇺🇸 أمريكا", "price": USA_NUMBER_PRICE, "phone": "+13025060244",
@@ -81,15 +80,16 @@ async def check_subscription(user_id: int) -> bool:
     return False
 
 def get_main_keyboard(user_id):
-    # جلب الرصيد الحقيقي بأمان من الداتا بيس
+    # جلب الرصيد الحقيقي من قاعدة البيانات بدقة لضمان عدم التصفير
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     balance = row[0] if row else 0.0
     
     text_header = (
-        "🔒 **متجر X9 المحمي للأرقام المميزة** 🌐\n\n"
-        "• تم تفعيل نظام الحماية المتقدم ضد التلاعب والثغرات.\n"
-        "• الأرصدة والعمليات محمية بالكامل.\n\n"
+        "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
+        "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
+        "• الشراء فوري وسريع عبر رصيدك المجمع أو نجوم تليجرام.\n"
+        "• إمكانية طلب كود التحقق (OTP) وبكل سهولة بعد الشراء.\n\n"
         f"🆔 `{user_id}`\n"
         f"💵 `${balance:.2f}`\n\n"
         "اختر ما يناسبك من القائمة 👇"
@@ -143,7 +143,6 @@ async def cmd_start(message: Message, state: FSMContext):
         conn.commit()
         
         if ref_id:
-            # حماية لمنع التلاعب برصيد الإحالات
             cursor.execute("UPDATE users SET balance = balance + 0.01 WHERE user_id = ?", (ref_id,))
             conn.commit()
             try:
@@ -231,7 +230,6 @@ async def buy_with_balance(callback: CallbackQuery):
         await callback.answer("هذا الرقم غير متاح أو تم بيعه!", show_alert=True)
         return
         
-    # فحص أمني دقيق للرصيد من قاعدة البيانات مباشرة لمنع أي تلاعب
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     balance = row[0] if row else 0.0
@@ -240,7 +238,6 @@ async def buy_with_balance(callback: CallbackQuery):
         await callback.answer(f"❌ رصيدك غير كافي (${balance:.2f}). يرجى شحن رصيدك!", show_alert=True)
         return
         
-    # خصم آمن وموثق
     new_balance = balance - data["price"]
     cursor.execute("UPDATE users SET balance = ? WHERE user_id = ?", (new_balance, user_id))
     conn.commit()
@@ -251,7 +248,7 @@ async def buy_with_balance(callback: CallbackQuery):
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     success_msg = (
-        f"✅ **تم شراء الرقم بنجاح تحت الحماية الكاملة!**\n\n"
+        f"✅ **تم شراء الرقم بنجاح!**\n\n"
         f"📱 **الرقم:** `{data['phone']}`\n"
         f"💵 **السعر المدفوع:** `${data['price']}`\n"
         f"💰 **رصيدك المتبقي:** `${new_balance:.2f}`\n\n"
@@ -286,7 +283,7 @@ async def recharge_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
     await callback.message.edit_text(
-        "💳 **شحن الرصيد الآمن بواسطة النجوم:**\n\nأرسل عدد النجوم المطلوبة (رقم صحيح فقط):",
+        "💳 **شحن الرصيد بواسطة النجوم:**\n\nأرسل عدد النجوم المطلوبة (رقم صحيح فقط):",
         reply_markup=keyboard, parse_mode="Markdown"
     )
     await callback.answer()
@@ -307,7 +304,7 @@ async def process_custom_stars_input(message: Message, state: FSMContext):
         [InlineKeyboardButton(text="🔙 إلغاء", callback_data="main_menu")]
     ])
     await state.clear()
-    await message.answer(f"📊 اضغط أدناه لإتمام الفاتورة الآمنة:", reply_markup=keyboard, parse_mode="Markdown")
+    await message.answer(f"📊 اضغط أدناه لإتمام الفاتورة:", reply_markup=keyboard, parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("pay_custom_star_"))
 async def pay_custom_stars_invoice(callback: CallbackQuery):
@@ -316,7 +313,7 @@ async def pay_custom_stars_invoice(callback: CallbackQuery):
     await bot.send_invoice(
         chat_id=callback.message.chat.id,
         title=f"شحن ({stars_count} نجمة)",
-        description="شحن آمن عبر تيليجرام",
+        description="شحن عبر تيليجرام",
         payload=f"recharge_stars_{stars_count}",
         provider_token="",
         currency="XTR",
@@ -376,13 +373,12 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     data = await state.get_data()
     recipient_id = data.get("recipient_id")
     
-    # تنفيذ آمن للتحويل مع قفل البيانات
     cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, sender_id))
     cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, recipient_id))
     conn.commit()
     await state.clear()
     
-    await message.answer(f"✅ تمت عملية التحويل بأمان تام بمبلغ `${amount:.2f}`", parse_mode="Markdown")
+    await message.answer(f"✅ تمت عملية التحويل بنجاح بمبلغ `${amount:.2f}`", parse_mode="Markdown")
     try:
         await bot.send_message(recipient_id, f"🎉 استلمت تحويل رصيد بقيمة `${amount:.2f}`", parse_mode="Markdown")
     except Exception:
@@ -393,7 +389,7 @@ async def ref_menu(callback: CallbackQuery):
     bot_info = await bot.get_me()
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{callback.from_user.id}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text(f"🤝 **رابط الإحالة الآمن:**\n`{ref_link}`", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(f"🤝 **رابط الإحالة الخاص بك:**\n`{ref_link}`", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "claim_bonus")
@@ -422,7 +418,7 @@ async def my_account(callback: CallbackQuery):
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     balance = cursor.fetchone()[0]
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text(f"⚡ **الحساب محمي وآمن:**\n\n🆔 المعرف: `{user_id}`\n💵 الرصيد: `${balance:.2f}`", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(f"⚡ **معلومات الحساب:**\n\n🆔 المعرف: `{user_id}`\n💵 الرصيد: `${balance:.2f}`", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 async def fetch_otp_async(session_str, api_id, api_hash):
@@ -443,7 +439,7 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         return f"خطأ: {str(e)}"
 
 async def main():
-    print("Starting X9 Secured Store Bot...")
+    print("Starting X9 Store Bot...")
     try:
         await bot.delete_webhook(drop_pending_updates=True)
     except Exception:
