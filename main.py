@@ -23,7 +23,10 @@ ADMIN_USERNAME = "diddy0"
 REQUIRED_CHANNEL = "VPP8P"
 
 # سعر الرقم الأمريكي الأساسي
-USA_NUMBER_PRICE = 0.50
+USA_NUMBER_PRICE = 0.40
+
+# قيمة الهدية اليومية والإحالة (سنت واحد)
+BONUS_AMOUNT = 0.01
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -100,9 +103,9 @@ def get_main_keyboard(user_id):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛒 شراء رقم جديد", callback_data="buy_number_menu")],
-        [InlineKeyboardButton(text="⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 هدية يومية", callback_data="claim_bonus")],
+        [InlineKeyboardButton(text="⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 هدية يومية ($0.01)", callback_data="claim_bonus")],
         [InlineKeyboardButton(text="💳 شحن رصيد نجوم", callback_data="recharge_menu")],
-        [InlineKeyboardButton(text="🤝 رابط إحالة", callback_data="ref_menu"), InlineKeyboardButton(text="💳 تحويل رصيد", callback_data="transfer_menu")],
+        [InlineKeyboardButton(text="🤝 رابط إحالة ($0.01)", callback_data="ref_menu"), InlineKeyboardButton(text="💳 تحويل رصيد", callback_data="transfer_menu")],
         [InlineKeyboardButton(text="💬 الدعم الفني", url=f"https://t.me/{ADMIN_USERNAME}")]
     ])
     return text_header, keyboard
@@ -112,6 +115,17 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
     
+    # فحص نظام الإحالة عند التسجيل
+    args = message.text.split()
+    referred_by = None
+    if len(args) > 1 and args[1].startswith("ref_"):
+        try:
+            referred_by = int(args[1].replace("ref_", ""))
+            if referred_by == user_id:
+                referred_by = None
+        except ValueError:
+            referred_by = None
+
     if not await check_subscription(user_id):
         sub_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📢 اشترك في القناة", url=f"https://t.me/{REQUIRED_CHANNEL}")],
@@ -128,7 +142,9 @@ async def cmd_start(message: Message, state: FSMContext):
 
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users (user_id, balance) VALUES (?, 0.0)", (user_id,))
+        cursor.execute("INSERT INTO users (user_id, balance, referred_by) VALUES (?, 0.0, ?)", (user_id, referred_by))
+        if referred_by:
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (BONUS_AMOUNT, referred_by))
         conn.commit()
 
     text, keyboard = get_main_keyboard(user_id)
@@ -226,7 +242,6 @@ async def buy_with_balance(callback: CallbackQuery):
         await callback.answer("❌ رصيدك غير كافٍ لشراء هذا الرقم!", show_alert=True)
         return
 
-    # خصم الرصيد وتحديث حالة الرقم
     cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (data["price"], user_id))
     conn.commit()
     
@@ -319,7 +334,6 @@ async def claim_bonus(callback: CallbackQuery):
     cursor.execute("SELECT last_bonus, balance FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     last_bonus_str = row[0]
-    balance = row[1]
     
     now = datetime.now()
     if last_bonus_str:
@@ -328,10 +342,10 @@ async def claim_bonus(callback: CallbackQuery):
             await callback.answer("❌ لقد حصلت على هديتك اليومية بالفعل، عد غداً!", show_alert=True)
             return
 
-    bonus_amount = 0.10
-    cursor.execute("UPDATE users SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (bonus_amount, now.isoformat(), user_id))
+    # المكافأة اليومية 1 سنت ($0.01)
+    cursor.execute("UPDATE users SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (BONUS_AMOUNT, now.isoformat(), user_id))
     conn.commit()
-    await callback.answer(f"🎉 تم إضافة ${bonus_amount:.2f} إلى رصيدك كهدية يومية!", show_alert=True)
+    await callback.answer(f"🎉 تم إضافة ${BONUS_AMOUNT:.2f} (سنت واحد) إلى رصيدك!", show_alert=True)
     text, keyboard = get_main_keyboard(user_id)
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -343,7 +357,11 @@ async def ref_menu(callback: CallbackQuery):
     bot_info = await bot.get_me()
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{callback.from_user.id}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text(f"🤝 **رابط الإحالة الخاص بك:**\n`{ref_link}`\n\nشاركه مع أصدقائك للحصول على رصيد مجاني!", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(
+        f"🤝 **رابط الإحالة الخاص بك:**\n`{ref_link}`\n\n"
+        f"احصل على **${BONUS_AMOUNT:.2f}** (سنت واحد) فوراً عن كل شخص يسجل من رابطك!", 
+        reply_markup=keyboard, parse_mode="Markdown"
+    )
     await callback.answer()
 
 @dp.callback_query(F.data == "transfer_menu")
