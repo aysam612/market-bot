@@ -19,6 +19,10 @@ from telethon.sessions import StringSession
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8947041920:AAFF8llkbKrI8WqBowy1IEjC8kso8ya7NJQ")
 ADMIN_USERNAME = "diddy0"
 
+# إعدادات الاشتراك الإجباري (ضع يوزر قناتك بدون @ ويوزر المالك)
+REQUIRED_CHANNEL = "YOUR_CHANNEL_USERNAME"  # مثال: "X9StoreChannel"
+ADMIN_ID = 000000000  # ضع ايدي المالك هنا إذا أردت التحقق منه، أو اعتمد على يوزر الدعم
+
 USA_NUMBER_PRICE = 0.80
 
 bot = Bot(token=BOT_TOKEN)
@@ -57,6 +61,18 @@ NUMBERS_STORE = {
     }
 }
 
+# دالة التحقق من الاشتراك الإجباري
+async def check_subscription(user_id: int) -> bool:
+    if not REQUIRED_CHANNEL or REQUIRED_CHANNEL == "YOUR_CHANNEL_USERNAME":
+        return True
+    try:
+        member = await bot.get_chat_member(chat_id=f"@{REQUIRED_CHANNEL}", user_id=user_id)
+        if member.status in ["member", "administrator", "creator"]:
+            return True
+    except Exception:
+        pass
+    return False
+
 def get_main_keyboard(user_id):
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
@@ -65,7 +81,7 @@ def get_main_keyboard(user_id):
     text_header = (
         "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
         "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
-        "• الشراء فوري وسريع عبر رصيدك المجمع أو نجوم تليجرام (**كل نجمة وحدة = 2 سنت ⭐**).\n"
+        "• الشراء فوري وسريع عبر رصيدك المجمع أو نجوم تليجرام.\n"
         "• إمكانية طلب كود التحقق (OTP) وبكل سهولة بعد الشراء.\n\n"
         f"🆔 `{user_id}`\n"
         f"💵 `${balance:.2f}`\n\n"
@@ -77,7 +93,7 @@ def get_main_keyboard(user_id):
         [InlineKeyboardButton(text="⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 هدية يومية", callback_data="claim_bonus")],
         [InlineKeyboardButton(text="💳 شحن رصيد", callback_data="recharge_menu")],
         [InlineKeyboardButton(text="🤝 دعوة صديق", callback_data="ref_menu"), InlineKeyboardButton(text="💳 تحويل رصيد", callback_data="transfer_menu")],
-        [InlineKeyboardButton(text="💬 الدعم الفني", url=f"https://t.me/{ADMIN_USERNAME}")]
+        [InlineKeyboardButton(text="💬 الدعم الفني والمطور", url=f"https://t.me/{ADMIN_USERNAME}")]
     ])
     return text_header, keyboard
 
@@ -85,8 +101,23 @@ def get_main_keyboard(user_id):
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
-    args = message.text.split()
     
+    # التحقق من الاشتراك الإجباري أولاً
+    if not await check_subscription(user_id):
+        sub_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📢 اشترك في القناة", url=f"https://t.me/{REQUIRED_CHANNEL}")],
+            [InlineKeyboardButton(text="🔄 تحقق من الاشتراك", callback_data="check_sub")]
+        ])
+        await message.answer(
+            "⚠️ **عذراً، يجب عليك الاشتراك في قناة البوت أولاً لاستخدام الخدمات!**\n\n"
+            f"يرجى الاشتراك في القناة: @{REQUIRED_CHANNEL}\n"
+            "ثم اضغط على زر (تحقق من الاشتراك) بالأسفل 👇",
+            reply_markup=sub_keyboard,
+            parse_mode="Markdown"
+        )
+        return
+
+    args = message.text.split()
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     user = cursor.fetchone()
     
@@ -116,19 +147,41 @@ async def cmd_start(message: Message, state: FSMContext):
     text, keyboard = get_main_keyboard(user_id)
     await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
 
+@dp.callback_query(F.data == "check_sub")
+async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    if await check_subscription(user_id):
+        await callback.message.delete()
+        # تسجيل المستخدم وإظهار القائمة الرئيسية
+        cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO users (user_id, balance) VALUES (?, 0.0)", (user_id,))
+            conn.commit()
+        text, keyboard = get_main_keyboard(user_id)
+        await callback.message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
+    else:
+        await callback.answer("❌ لم تقم بالاشتراك في القناة بعد! يرجى الاشتراك ثم المحاولة.", show_alert=True)
+
 @dp.callback_query(F.data == "main_menu")
 async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = callback.from_user.id
+    if not await check_subscription(user_id):
+        await callback.answer("❌ يجب الاشتراك في القناة أولاً!", show_alert=True)
+        return
     text, keyboard = get_main_keyboard(user_id)
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    if not await check_subscription(user_id):
+        await callback.answer("❌ يجب الاشتراك في القناة أولاً!", show_alert=True)
+        return
+        
     available_usa = sum(1 for d in NUMBERS_STORE.values() if d["country"] == "usa" and not d["sold"])
     
-    # تم إزالة ذكر (40 نجمة) من نص الزر هنا
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"🇺🇸 أمريكا ({available_usa}) - ${USA_NUMBER_PRICE}", callback_data="buy_country_usa")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
@@ -156,7 +209,7 @@ async def buy_country_usa_handler(callback: CallbackQuery):
     
     await callback.message.edit_text(
         f" الدولة: {data['name']}\n"
-        f" السعر: ${data['price']} (يعادل **40 نجمة** لأن كل نجمة وحدة = 2 سنت)\n\n"
+        f" السعر: ${data['price']}\n\n"
         f"اختر اتمام الشراء:",
         reply_markup=keyboard,
         parse_mode="Markdown"
@@ -178,7 +231,7 @@ async def buy_with_balance(callback: CallbackQuery):
     balance = row[0] if row else 0.0
     
     if balance < data["price"]:
-        await callback.answer(f"❌ رصيدك غير كافي (${balance:.2f}). يرجى شحن رصيدك (لشراء رقم بـ 80 سنت تحتاج لشحن 40 نجمة)!", show_alert=True)
+        await callback.answer(f"❌ رصيدك غير كافي (${balance:.2f}). يرجى شحن رصيدك!", show_alert=True)
         return
         
     new_balance = balance - data["price"]
@@ -227,14 +280,18 @@ async def get_otp_callback(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    if not await check_subscription(user_id):
+        await callback.answer("❌ يجب الاشتراك في القناة أولاً!", show_alert=True)
+        return
+
     await state.set_state(States.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 رجوع للقائمة الرئيسية", callback_data="main_menu")]
     ])
     await callback.message.edit_text(
         "💳 **شحن الرصيد بواسطة نجوم تليجرام:**\n\n"
-        "⭐ **قيمة التحويل:** `كل نجمة وحدة = 2 سنت`\n"
-        "💡 *(مثال: لشحن 0.80$ سعر الرقم الأمريكي، أرسل 40 نجمة)*\n\n"
+        "⭐ **قيمة التحويل:** `كل نجمة وحدة = 2 سنت`\n\n"
         "✍️ **أرسل الآن في الشات عدد النجوم التي تريد شحنها** (أرسل رقماً صحيحاً فقط، مثل: `40`):",
         reply_markup=keyboard,
         parse_mode="Markdown"
@@ -265,7 +322,7 @@ async def process_custom_stars_input(message: Message, state: FSMContext):
     await message.answer(
         f"📊 **تفاصيل عملية الشحن:**\n\n"
         f"• عدد النجوم: `{stars_count} نجمة`\n"
-        f"• الرصيد المضاف لحسابك: `${added_usd:.2f}` *(لأن كل نجمة وحدة = 2 سنت)*\n\n"
+        f"• الرصيد المضاف لحسابك: `${added_usd:.2f}`\n\n"
         f"اضغط على زر الدفع أدناه لإتمام الفاتورة 👇",
         reply_markup=keyboard,
         parse_mode="Markdown"
@@ -291,6 +348,11 @@ async def pay_custom_stars_invoice(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "transfer_menu")
 async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    if not await check_subscription(user_id):
+        await callback.answer("❌ يجب الاشتراك في القناة أولاً!", show_alert=True)
+        return
+
     await state.set_state(States.waiting_for_transfer_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 رجوع للقائمة الرئيسية", callback_data="main_menu")]
@@ -368,7 +430,7 @@ async def process_transfer_amount(message: Message, state: FSMContext):
         f"💸 المبلغ المحول: `${amount:.2f}`\n"
         f"👤 إلى المستخدم: `{recipient_id}`\n"
         f"💰 رصيدك المتبقي: `${sender_balance - amount:.2f}`",
-        parse_mode="Markdown"
+        parse_Mode="Markdown"
     )
     
     try:
