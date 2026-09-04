@@ -195,12 +195,15 @@ async def buy_with_balance(callback: CallbackQuery):
     
     otp_text = await fetch_otp_async(session, api_id, api_hash)
     
+    # ⚠️ التحذير بالعربية الفصحى
     success_msg = (
         f"✅ **تم شراء الرقم بنجاح!**\n\n"
         f"📱 **الرقم:** `{phone}`\n"
         f"💵 **السعر المدفوع:** `${data['price']}`\n"
         f"💰 **رصيدك المتبقي:** `${new_balance:.2f}`\n\n"
-        f"📥 **آخر رسالة تحقق (OTP):**\n`{otp_text}`"
+        f"📥 **آخر رسالة تحقق (OTP):**\n`{otp_text}`\n\n"
+        f"⚠️ **تنبيه هام جداً:**\n"
+        f"إذا قمت بتسجيل الخروج من الحساب، فلا يوجد أي تعويض نهائياً وتحت أي ظرف من الظروف!"
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -454,7 +457,6 @@ async def main():
     print("Starting X9 Store Bot...")
     await bot.delete_webhook(drop_pending_updates=True)
     
-    # 📌 أمر start فقط في زر الـ Menu
     commands = [
         BotCommand(command="start", description="ابداء")
     ]
