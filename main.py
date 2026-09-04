@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, 
-    LabeledPrice
+    LabeledPrice, BotCommand
 )
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -20,7 +20,6 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "8526493972:AAEVb5f6rIcPCqMu1wVvEKop3QXv
 ADMIN_USERNAME = "diddy0"
 
 # كل نجمة واحدة = 2 سنت (0.02 دولار)
-# سعر الرقم الأمريكي 80 سنت = يحتاج 40 نجمة
 USA_NUMBER_PRICE = 0.80
 
 bot = Bot(token=BOT_TOKEN)
@@ -253,7 +252,7 @@ async def process_custom_stars_input(message: Message, state: FSMContext):
         await message.answer("❌ يرجى إرسال رقم أكبر من الصفر:")
         return
         
-    total_cents = stars_count * 2 # كل نجمة وحدة = 2 سنت
+    total_cents = stars_count * 2
     added_usd = total_cents / 100
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -452,8 +451,15 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         return f"خطأ: {str(e)}"
 
 async def main():
-    print("Starting X9 Store Bot (Clear Star Ratio Added)...")
+    print("Starting X9 Store Bot...")
     await bot.delete_webhook(drop_pending_updates=True)
+    
+    # 📌 أمر start فقط في زر الـ Menu
+    commands = [
+        BotCommand(command="start", description="ابداء")
+    ]
+    await bot.set_my_commands(commands)
+    
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
