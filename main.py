@@ -19,9 +19,8 @@ from telethon.sessions import StringSession
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8947041920:AAFF8llkbKrI8WqBowy1IEjC8kso8ya7NJQ")
 ADMIN_USERNAME = "diddy0"
 
-# إعدادات الاشتراك الإجباري (ضع يوزر قناتك بدون @ ويوزر المالك)
-REQUIRED_CHANNEL = "YOUR_CHANNEL_USERNAME"  # مثال: "X9StoreChannel"
-ADMIN_ID = 000000000  # ضع ايدي المالك هنا إذا أردت التحقق منه، أو اعتمد على يوزر الدعم
+# إعدادات الاشتراك الإجباري للقناة المطلوبة
+REQUIRED_CHANNEL = "VPP8P"
 
 USA_NUMBER_PRICE = 0.80
 
@@ -33,10 +32,11 @@ class States(StatesGroup):
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
 
-# ================= قاعدة البيانات =================
+# ================= قاعدة البيانات (محمية ضد التصفير) =================
 conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
 
+# استخدام CREATE TABLE IF NOT EXISTS يضمن عدم مسح البيانات القديمة عند إعادة تشغيل البوت
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
@@ -63,7 +63,7 @@ NUMBERS_STORE = {
 
 # دالة التحقق من الاشتراك الإجباري
 async def check_subscription(user_id: int) -> bool:
-    if not REQUIRED_CHANNEL or REQUIRED_CHANNEL == "YOUR_CHANNEL_USERNAME":
+    if not REQUIRED_CHANNEL:
         return True
     try:
         member = await bot.get_chat_member(chat_id=f"@{REQUIRED_CHANNEL}", user_id=user_id)
@@ -102,7 +102,7 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
     
-    # التحقق من الاشتراك الإجباري أولاً
+    # فحص الاشتراك الإجباري
     if not await check_subscription(user_id):
         sub_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📢 اشترك في القناة", url=f"https://t.me/{REQUIRED_CHANNEL}")],
@@ -118,6 +118,8 @@ async def cmd_start(message: Message, state: FSMContext):
         return
 
     args = message.text.split()
+    
+    # التحقق هل المستخدم مسجل مسبقاً أم لا لكي لا يتم تصفير رصيده
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     user = cursor.fetchone()
     
@@ -152,7 +154,7 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     if await check_subscription(user_id):
         await callback.message.delete()
-        # تسجيل المستخدم وإظهار القائمة الرئيسية
+        # التأكد من تسجيل المستخدم إذا لم يكن مسجلاً دون المساس برصيده إن وجد
         cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
         if not cursor.fetchone():
             cursor.execute("INSERT INTO users (user_id, balance) VALUES (?, 0.0)", (user_id,))
@@ -430,7 +432,7 @@ async def process_transfer_amount(message: Message, state: FSMContext):
         f"💸 المبلغ المحول: `${amount:.2f}`\n"
         f"👤 إلى المستخدم: `{recipient_id}`\n"
         f"💰 رصيدك المتبقي: `${sender_balance - amount:.2f}`",
-        parse_Mode="Markdown"
+        parse_mode="Markdown"
     )
     
     try:
