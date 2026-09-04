@@ -128,8 +128,9 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
 async def buy_number_menu(callback: CallbackQuery):
     available_usa = sum(1 for d in NUMBERS_STORE.values() if d["country"] == "usa" and not d["sold"])
     
+    # تم إزالة ذكر (40 نجمة) من نص الزر هنا
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🇺🇸 أمريكا ({available_usa}) - ${USA_NUMBER_PRICE} (40 نجمة)", callback_data="buy_country_usa")],
+        [InlineKeyboardButton(text=f"🇺🇸 أمريكا ({available_usa}) - ${USA_NUMBER_PRICE}", callback_data="buy_country_usa")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
     await callback.message.edit_text("🌍 **اختر الدولة المتاحة:**", reply_markup=keyboard, parse_mode="Markdown")
@@ -418,7 +419,7 @@ async def claim_bonus(callback: CallbackQuery):
     
     text, keyboard = get_main_keyboard(user_id)
     try:
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_Mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     except Exception:
         pass
 
