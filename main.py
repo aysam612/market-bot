@@ -22,8 +22,8 @@ ADMIN_USERNAME = "diddy0"
 # قناة الاشتراك الإجباري
 REQUIRED_CHANNEL = "VPP8P"
 
-# سعر الرقم الأمريكي الأساسي
-USA_NUMBER_PRICE = 0.50
+# 🎁 جعل سعر الرقم مجانياً ($0.00)
+USA_NUMBER_PRICE = 0.00
 
 # قيمة الهدية اليومية والإحالة (سنت واحد)
 BONUS_AMOUNT = 0.01
@@ -97,7 +97,7 @@ def get_main_keyboard(user_id):
     
     text_header = (
         "🤖 **أهلاً بك في متجر الأرقام الرسمي** 🌐\n\n"
-        "• يمكنك شراء أرقام تليجرام واستقبال الكود مباشرة.\n"
+        "• يمكنك الحصول على أرقام مجانية واستقبال الكود مباشرة.\n"
         "• اشحن رصيدك عبر نجوم تليجرام واستفد من العروض.\n\n"
         f"🆔 المعرف: `{user_id}`\n"
         f"💵 رصيدك: `${balance:.2f}`\n\n"
@@ -105,7 +105,7 @@ def get_main_keyboard(user_id):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛒 شراء رقم جديد", callback_data="buy_number_menu")],
+        [InlineKeyboardButton(text="🎁 الحصول على رقم مجاني", callback_data="buy_number_menu")],
         [InlineKeyboardButton(text="⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 هدية يومية ($0.01)", callback_data="claim_bonus")],
         [InlineKeyboardButton(text="💳 شحن رصيد نجوم", callback_data="recharge_menu")],
         [InlineKeyboardButton(text="🤝 رابط إحالة ($0.01)", callback_data="ref_menu"), InlineKeyboardButton(text="💳 تحويل رصيد", callback_data="transfer_menu")],
@@ -184,13 +184,12 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
 async def buy_number_menu(callback: CallbackQuery):
     available_usa = sum(1 for d in NUMBERS_STORE.values() if d["country"] == "usa" and not d["sold"])
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🇺🇸 أمريكا (غير سليمين) ({available_usa}) - ${USA_NUMBER_PRICE:.2f}", callback_data="buy_country_usa")],
+        [InlineKeyboardButton(text=f"🇺🇸 أمريكا (غير سليمين) ({available_usa}) - مجاني 🎁", callback_data="buy_country_usa")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
-    await callback.message.edit_text("🌍 **اختر الدولة لشراء رقم:**", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text("🌍 **اختر الدولة للحصول على رقم مجاني:**", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
-# شراء عشوائي مباشر عند اختيار الدولة
 @dp.callback_query(F.data == "buy_country_usa")
 async def buy_country_usa_handler(callback: CallbackQuery):
     available_ids = [nid for nid, d in NUMBERS_STORE.items() if d["country"] == "usa" and not d["sold"]]
@@ -201,16 +200,15 @@ async def buy_country_usa_handler(callback: CallbackQuery):
         await callback.answer()
         return
 
-    # اختيار رقم عشوائي تلقائياً
     num_id = random.choice(available_ids)
     data = NUMBERS_STORE[num_id]
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"تأكيد الشراء من الرصيد (${data['price']:.2f})", callback_data=f"buy_balance_{num_id}")],
+        [InlineKeyboardButton(text="تأكيد الحصول على الرقم (مجاناً)", callback_data=f"buy_balance_{num_id}")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]
     ])
     await callback.message.edit_text(
-        f"الدولة: {data['name']}\nالسعر: ${data['price']:.2f}\n\nسيتم اختيار رقم لك تلقائياً عند تأكيد الشراء.\nتأكيد عملية الشراء؟",
+        f"الدولة: {data['name']}\nالسعر: **مجاني**\n\nسيتم اختيار رقم لك تلقائياً عند التأكيد.\nهل تريد المتابعة؟",
         reply_markup=keyboard, parse_mode="Markdown"
     )
     await callback.answer()
@@ -222,20 +220,9 @@ async def buy_with_balance(callback: CallbackQuery):
     data = NUMBERS_STORE.get(num_id)
     
     if not data or data["sold"]:
-        await callback.answer("عذراً، الرقم تم بيعه لمستخدم آخر! حاول مجدداً.", show_alert=True)
-        return
-        
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-    balance = cursor.fetchone()[0]
-    
-    if balance < data["price"]:
-        await callback.answer("❌ رصيدك غير كافٍ لشراء هذا الرقم!", show_alert=True)
+        await callback.answer("عذراً، الرقم أخذة مستخدم آخر! حاول مجدداً.", show_alert=True)
         return
 
-    # خصم سعر الرقم فقط والاحتفاظ بالمتبقي
-    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (data["price"], user_id))
-    conn.commit()
-    
     NUMBERS_STORE[num_id]["sold"] = True
     NUMBERS_STORE[num_id]["buyer_id"] = user_id
     
@@ -243,9 +230,9 @@ async def buy_with_balance(callback: CallbackQuery):
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     success_msg = (
-        f"✅ **تم الشراء بنجاح!**\n\n"
+        f"🎉 **تم طلب الرقم بنجاح!**\n\n"
         f"📱 **الرقم المخصص لك:** `{data['phone']}`\n"
-        f"💵 **الخصم:** ${data['price']:.2f}\n\n"
+        f"💵 **السعر:** مجاني 🎁\n\n"
         f"📥 **كود التحقق (OTP):**\n`{otp_text}`\n\n"
         f"💡 **ملاحظة هامّة جداً:**\nقم بطلب كود التفعيل داخل تطبيق تيليجرام أولاً، ثم اضغط على زر **(🔄 تحديث الكود)** بالأسفل ليظهر لك الكود فوراً."
     )
