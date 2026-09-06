@@ -1,4 +1,5 @@
 import os
+import re
 import random
 import asyncio
 import sqlite3
@@ -22,7 +23,7 @@ ADMIN_USERNAME = "diddy0"
 # قناة الاشتراك الإجباري
 REQUIRED_CHANNEL = "VPP8P"
 
-# 🎁 جعل سعر الرقم مجانياً ($0.00)
+# 🎁 سعر الرقم مجاني ($0.00)
 USA_NUMBER_PRICE = 0.00
 
 # قيمة الهدية اليومية والإحالة (سنت واحد)
@@ -233,8 +234,11 @@ async def buy_with_balance(callback: CallbackQuery):
         f"🎉 **تم طلب الرقم بنجاح!**\n\n"
         f"📱 **الرقم المخصص لك:** `{data['phone']}`\n"
         f"💵 **السعر:** مجاني 🎁\n\n"
-        f"📥 **كود التحقق (OTP):**\n`{otp_text}`\n\n"
-        f"💡 **ملاحظة هامّة جداً:**\nقم بطلب كود التفعيل داخل تطبيق تيليجرام أولاً، ثم اضغط على زر **(🔄 تحديث الكود)** بالأسفل ليظهر لك الكود فوراً."
+        f"📥 **حالة الكود (OTP):**\n{otp_text}\n\n"
+        f"💡 **تنبيه هام جداً عند تسجيل الدخول:**\n"
+        f"1. اكتب الرقم في تطبيق تيليجرام واطلب الكود.\n"
+        f"2. إذا طلب التطبيق الشحن بـ **SMS** حاول الاختيار عبر التطبيق إن أمكن.\n"
+        f"3. اضغط على زر **(🔄 تحديث الكود)** بالأسفل فوراً لجلب الرسالة الجديدة."
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -261,7 +265,7 @@ async def get_otp_callback(callback: CallbackQuery):
     
     msg = (
         f"📱 **الرقم:** `{data['phone']}`\n\n"
-        f"📥 **الكود الحالي (OTP):**\n`{otp_text}`\n\n"
+        f"📥 **حالة الكود (OTP):**\n{otp_text}\n\n"
         f"💡 **ملاحظة:** قم بطلب كود التفعيل في تطبيق تيليجرام أولاً، ثم اضغط على زر **(🔄 تحديث الكود)** ليظهر لك الكود فوراً."
     )
     try:
@@ -405,22 +409,39 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(f"✅ تم تحويل `${amount:.2f}` بنجاح للمستخدم `{recipient_id}`!", parse_mode="Markdown")
 
+# 🛠️ دالة جلب واستخراج كود OTP المحدثة والمطورة
 async def fetch_otp_async(session_str, api_id, api_hash):
     if not session_str:
-        return "لا توجد جلسة ❌"
+        return "❌ لا توجد جلسة لهذا الرقم!"
     try:
         client = TelegramClient(StringSession(session_str), api_id, api_hash)
         await client.connect()
         if not await client.is_user_authorized():
             await client.disconnect()
-            return "الجلسة منتهية أو محظورة عام ❌"
-        messages = await client.get_messages(777000, limit=1)
+            return "❌ الجلسة منتهية أو محظورة من تيليجرام."
+        
+        # البحث في المحادثة الرسمية لحساب تيليجرام (777000)
+        messages = await client.get_messages(777000, limit=5)
         await client.disconnect()
+        
         if not messages:
-            return "لم يصل كود التفعيل بعد ⏳ (اطلب الكود في تطبيق تيليجرام ثم اضغط تحديث)"
-        return messages[0].message
+            return "⏳ لم يصل الكود بعد.. أطلب الكود من تطبيق تيليجرام أولاً ثم اضغط تحديث."
+        
+        for msg in messages:
+            if msg.text:
+                # استخراج الأرقام المكونة من 5 أرقام (رمز التفعيل)
+                otp_match = re.search(r'\b\d{5}\b', msg.text)
+                if otp_match:
+                    code = otp_match.group(0)
+                    msg_time = msg.date.strftime("%Y-%m-%d %H:%M:%S")
+                    return f"🔑 **الكود الخاص بك:** `{code}`\n⏰ **وقت الرسالة:** {msg_time}"
+        
+        # في حال لم يجد نمط 5 أرقام، سيتم عرض نص آخر رسالة واصلة بالكامل
+        latest_text = messages[0].text
+        return f"📩 **وصلت رسالة جديدة:**\n\n`{latest_text}`"
+        
     except Exception as e:
-        return f"خطأ في الاتصال: {str(e)}"
+        return f"❌ خطأ أثناء الاتصال بالجلسة: {str(e)}"
 
 async def main():
     print("جاري تشغيل بوت الأرقام الأساسي...")
