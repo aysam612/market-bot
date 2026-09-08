@@ -18,13 +18,14 @@ from telethon.sessions import StringSession
 
 # ================= الإعدادات الأساسية =================
 BOT_TOKEN = "8896024185:AAFnycldDpL4OyQ4ebpgvjs1F1hJsrI-eJE"
-ADMIN_USERNAME = "diddy0"
+ADMIN_USERNAME = "aaysam"
 
 # قناة الاشتراك الإجباري
 REQUIRED_CHANNEL = "VPP8P"
 
-# 🎁 سعر الرقم مجاني ($0.00)
-USA_NUMBER_PRICE = 0.00
+# 💵 أسعار الأرقام الجديدة
+USA_NUMBER_PRICE = 3.00
+COLOMBIA_NUMBER_PRICE = 1.00
 
 # قيمة الهدية اليومية والإحالة (سنت واحد)
 BONUS_AMOUNT = 0.01
@@ -40,8 +41,14 @@ class States(StatesGroup):
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
 
-# ================= قاعدة البيانات الأساسية =================
-conn = sqlite3.connect("telegram_bot.db", check_same_thread=False)
+# ================= إعداد مسار القاعدة الدائم لتجنب فقدان السنتات =================
+DB_DIR = "data"
+if not os.path.exists(DB_DIR):
+    os.makedirs(DB_DIR)
+
+DB_PATH = os.path.join(DB_DIR, "telegram_bot.db")
+
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -49,7 +56,16 @@ CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     balance REAL DEFAULT 0.0,
     last_bonus TEXT,
-    referred_by INTEGER
+    referred_by INTEGER,
+    language TEXT DEFAULT 'ar'
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS user_purchases (
+    user_id INTEGER,
+    number_id TEXT,
+    PRIMARY KEY (user_id, number_id)
 )
 """)
 conn.commit()
@@ -63,9 +79,16 @@ NUMBERS_STORE = {
         "phone": "+13526419211",
         "session": "1AZWarzYBu5KAcXua9CNUuBPNtCE_7qKjZSrPCW8oTglmRjTeiqir6y6P253w6ckdo01lcaAnL1vNx0OMBxDWoCTGTG7xGWdWUor7J8Tde_bTf2Qqpcf5GFquiqcNFudvsbYm1UdvzIQwaUbByP7rFr3tnF6nlfh56QEr3Xqv9PyKBlXSDYK2hMLfSwy6Gh-F0J5CUerfi6qOArHG2XzPzx5rgN8DNC7yPDIgbQiCmU7XLAniXpYa4CPH0x89aLYRh395cRkm0mbwWyuJQo3wOnulNW-JvPB3ctEMGFkVk9LqIhv3rOKoy0k_qLJZHn6Sn5qgjadwGmicP1rVTMeW8TY5AkXnE_w=",
         "api_id": 34198296, 
-        "api_hash": "8b007a14ebc08f01120d0ebs8ba4d595", 
-        "sold": False, 
-        "buyer_id": None
+        "api_hash": "8b007a14ebc08f01120d0ebs8ba4d595"
+    },
+    "2": {
+        "country": "colombia", 
+        "name": "🇨🇴 كولومبيا", 
+        "price": COLOMBIA_NUMBER_PRICE, 
+        "phone": "+57XXXXXXXXX", # استبدله برقمك الكولومبي الحقيقي لاحقاً
+        "session": "ضع_جلسة_كولومبيا_هنا_عندما_تجهزها", # حط سيشن كولومبيا هنا
+        "api_id": 1234567, # استبدلها بـ api_id الخاص بكولومبيا
+        "api_hash": "your_colombia_api_hash" # استبدلها بـ api_hash الخاص بكولومبيا
     }
 }
 
@@ -80,28 +103,67 @@ async def check_subscription(user_id: int) -> bool:
         pass
     return False
 
+def get_user_language(user_id: int) -> str:
+    cursor.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    return row[0] if row else 'ar'
+
 def get_main_keyboard(user_id):
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT balance, language FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     balance = row[0] if row and row[0] is not None else 0.0
+    lang = row[1] if row and len(row) > 1 else 'ar'
     
-    text_header = (
-        "🤖 **أهلاً بك في متجر الأرقام الرسمي** 🌐\n\n"
-        "• يمكنك الحصول على أرقام مجانية واستقبال الكود مباشرة.\n"
-        "• اشحن رصيدك عبر نجوم تليجرام واستفد من العروض.\n\n"
-        f"🆔 المعرف: `{user_id}`\n"
-        f"💵 رصيدك: `${balance:.2f}`\n\n"
-        "اختر من القائمة أدناه 👇"
-    )
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 الحصول على رقم مجاني", callback_data="buy_number_menu")],
-        [InlineKeyboardButton(text="⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 هدية يومية ($0.01)", callback_data="claim_bonus")],
-        [InlineKeyboardButton(text="💳 شحن رصيد نجوم", callback_data="recharge_menu")],
-        [InlineKeyboardButton(text="🤝 رابط إحالة ($0.01)", callback_data="ref_menu"), InlineKeyboardButton(text="💳 تحويل رصيد", callback_data="transfer_menu")],
-        [InlineKeyboardButton(text="💬 الدعم الفني", url=f"https://t.me/{ADMIN_USERNAME}")]
-    ])
+    if lang == 'en':
+        text_header = (
+            "🤖 **Welcome to the Official Number Store** 🌐\n\n"
+            "• Get numbers and receive OTP codes instantly.\n"
+            "• Top up your balance via Telegram Stars.\n\n"
+            f"🆔 ID: `{user_id}`\n"
+            f"💵 Balance: `${balance:.2f}`\n\n"
+            "Choose from the menu below 👇"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 Buy Numbers Store", callback_data="buy_number_menu")],
+            [InlineKeyboardButton(text="⚡ My Account", callback_data="my_account"), InlineKeyboardButton(text="🎁 Daily Bonus ($0.01)", callback_data="claim_bonus")],
+            [InlineKeyboardButton(text="💳 Recharge Stars", callback_data="recharge_menu")],
+            [InlineKeyboardButton(text="🤝 Ref Link ($0.01)", callback_data="ref_menu"), InlineKeyboardButton(text="💳 Transfer Balance", callback_data="transfer_menu")],
+            [InlineKeyboardButton(text="🌐 Change Language (العربية)", callback_data="toggle_lang")],
+            [InlineKeyboardButton(text="💬 Support", url=f"https://t.me/{ADMIN_USERNAME}")]
+        ])
+    else:
+        text_header = (
+            "🤖 **أهلاً بك في متجر الأرقام الرسمي** 🌐\n\n"
+            "• يمكنك شراء الأرقام واستقبال الكود مباشرة.\n"
+            "• اشحن رصيدك عبر نجوم تليجرام واستفد من العروض.\n\n"
+            f"🆔 المعرف: `{user_id}`\n"
+            f"💵 رصيدك: `${balance:.2f}`\n\n"
+            "اختر من القائمة أدناه 👇"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 متجر الأرقام", callback_data="buy_number_menu")],
+            [InlineKeyboardButton(text="⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 هدية يومية ($0.01)", callback_data="claim_bonus")],
+            [InlineKeyboardButton(text="💳 شحن رصيد نجوم", callback_data="recharge_menu")],
+            [InlineKeyboardButton(text="🤝 رابط إحالة ($0.01)", callback_data="ref_menu"), InlineKeyboardButton(text="💳 تحويل رصيد", callback_data="transfer_menu")],
+            [InlineKeyboardButton(text="🌐 Change Language (English)", callback_data="toggle_lang")],
+            [InlineKeyboardButton(text="💬 الدعم الفني", url=f"https://t.me/{ADMIN_USERNAME}")]
+        ])
     return text_header, keyboard
+
+@dp.callback_query(F.data == "toggle_lang")
+async def toggle_lang_callback(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    current_lang = get_user_language(user_id)
+    new_lang = 'en' if current_lang == 'ar' else 'ar'
+    cursor.execute("UPDATE users SET language = ? WHERE user_id = ?", (new_lang, user_id))
+    conn.commit()
+    
+    text, keyboard = get_main_keyboard(user_id)
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer()
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -134,7 +196,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users (user_id, balance, referred_by) VALUES (?, 0.0, ?)", (user_id, referred_by))
+        cursor.execute("INSERT INTO users (user_id, balance, referred_by, language) VALUES (?, 0.0, ?, 'ar')", (user_id, referred_by))
         if referred_by:
             cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (BONUS_AMOUNT, referred_by))
         conn.commit()
@@ -152,7 +214,7 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
             pass
         cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
         if not cursor.fetchone():
-            cursor.execute("INSERT INTO users (user_id, balance) VALUES (?, 0.0)", (user_id,))
+            cursor.execute("INSERT INTO users (user_id, balance, language) VALUES (?, 0.0, 'ar')", (user_id,))
             conn.commit()
         text, keyboard = get_main_keyboard(user_id)
         await callback.message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -172,35 +234,46 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
-    available_usa = sum(1 for d in NUMBERS_STORE.values() if d["country"] == "usa" and not d["sold"])
+    user_id = callback.from_user.id
+    lang = get_user_language(user_id)
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🇺🇸 أمريكا (احتيالي) ({available_usa}) - مجاني 🎁", callback_data="buy_country_usa")],
+        [InlineKeyboardButton(text="🇺🇸 أمريكا - $3.00", callback_data="buy_country_1")],
+        [InlineKeyboardButton(text="🇨🇴 كولومبيا - $1.00", callback_data="buy_country_2")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
-    await callback.message.edit_text("🌍 **اختر الدولة للحصول على رقم مجاني:**", reply_markup=keyboard, parse_mode="Markdown")
+    title = "🌍 **اختر الدولة لشراء الرقم:**" if lang == 'ar' else "🌍 **Choose country to buy number:**"
+    await callback.message.edit_text(title, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data == "buy_country_usa")
-async def buy_country_usa_handler(callback: CallbackQuery):
-    available_ids = [nid for nid, d in NUMBERS_STORE.items() if d["country"] == "usa" and not d["sold"]]
+@dp.callback_query(F.data.startswith("buy_country_"))
+async def buy_country_handler(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    lang = get_user_language(user_id)
+    num_id = callback.data.replace("buy_country_", "")
     
-    if not available_ids:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]])
-        await callback.message.edit_text("للأسف نفدت الأرقام المتوفرة حالياً 🔴", reply_markup=keyboard, parse_mode="Markdown")
-        await callback.answer()
+    cursor.execute("SELECT 1 FROM user_purchases WHERE user_id = ? AND number_id = ?", (user_id, num_id))
+    if cursor.fetchone():
+        await callback.answer("❌ لقد قمت بشراء هذا الرقم مسبقاً!", show_alert=True)
         return
 
-    num_id = random.choice(available_ids)
-    data = NUMBERS_STORE[num_id]
+    data = NUMBERS_STORE.get(num_id)
+    if not data:
+        await callback.answer("❌ الرقم غير متوفر حالياً.", show_alert=True)
+        return
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="تأكيد الحصول على الرقم (مجاناً)", callback_data=f"buy_balance_{num_id}")],
+        [InlineKeyboardButton(text=f"تأكيد الشراء مقابل ${data['price']:.2f}", callback_data=f"buy_balance_{num_id}")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]
     ])
-    await callback.message.edit_text(
-        f"الدولة: {data['name']}\nالسعر: **مجاني**\n\nسيتم اختيار رقم لك تلقائياً عند التأكيد.\nهل تريد المتابعة؟",
-        reply_markup=keyboard, parse_mode="Markdown"
+    
+    text = (
+        f"الدولة: {data['name']}\n"
+        f"السعر: **${data['price']:.2f}**\n\n"
+        f"هل تريد تأكيد عملية الشراء؟" if lang == 'ar' else
+        f"Country: {data['name']}\nPrice: **${data['price']:.2f}**\n\nConfirm purchase?"
     )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_balance_"))
@@ -208,31 +281,49 @@ async def buy_with_balance(callback: CallbackQuery):
     user_id = callback.from_user.id
     num_id = callback.data.replace("buy_balance_", "")
     data = NUMBERS_STORE.get(num_id)
+    lang = get_user_language(user_id)
     
-    if not data or data["sold"]:
-        await callback.answer("عذراً، الرقم أخذة مستخدم آخر! حاول مجدداً.", show_alert=True)
+    cursor.execute("SELECT 1 FROM user_purchases WHERE user_id = ? AND number_id = ?", (user_id, num_id))
+    if cursor.fetchone():
+        await callback.answer("لقد اشتريت هذا الرقم من قبل!", show_alert=True)
         return
 
-    NUMBERS_STORE[num_id]["sold"] = True
-    NUMBERS_STORE[num_id]["buyer_id"] = user_id
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    balance = row[0] if row else 0.0
+
+    price = data['price']
+    if balance < price:
+        err = "❌ رصيدك غير كافي لشراء هذا الرقم. يرجى شحن رصيدك." if lang == 'ar' else "❌ Insufficient balance to buy this number. Please top up."
+        await callback.answer(err, show_alert=True)
+        return
+
+    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (price, user_id))
+    cursor.execute("INSERT INTO user_purchases (user_id, number_id) VALUES (?, ?)", (user_id, num_id))
+    conn.commit()
     
     await callback.answer("⏳ جاري جلب كود التفعيل...", show_alert=False)
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     success_msg = (
-        f"🎉 **تم طلب الرقم بنجاح!**\n\n"
+        f"🎉 **تم شراء الرقم بنجاح!**\n\n"
         f"📱 **الرقم المخصص لك:** `{data['phone']}`\n"
-        f"💵 **السعر:** مجاني 🎁\n\n"
+        f"💵 **تم خصم:** `${price:.2f}`\n\n"
         f"📥 **حالة الكود (OTP):**\n{otp_text}\n\n"
-        f"💡 **تنبيه هام جداً عند تسجيل الدخول:**\n"
+        f"💡 **تنبيه هام جداً:**\n"
         f"1. اكتب الرقم في تطبيق تيليجرام واطلب الكود.\n"
-        f"2. إذا طلب التطبيق الشحن بـ **SMS** حاول الاختيار عبر التطبيق إن أمكن.\n"
-        f"3. اضغط على زر **(🔄 تحديث الكود)** بالأسفل فوراً لجلب الرسالة الجديدة."
+        f"2. اضغط على زر **(🔄 تحديث الكود)** بالأسفل فوراً لجلب الرسالة الجديدة."
+    ) if lang == 'ar' else (
+        f"🎉 **Number purchased successfully!**\n\n"
+        f"📱 **Your Phone:** `{data['phone']}`\n"
+        f"💵 **Deducted:** `${price:.2f}`\n\n"
+        f"📥 **OTP Status:**\n{otp_text}\n\n"
+        f"💡 **Note:** Request OTP in Telegram app, then click Refresh."
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 تحديث الكود (OTP)", callback_data=f"get_otp_{num_id}")],
-        [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🔄 تحديث الكود / Refresh OTP", callback_data=f"get_otp_{num_id}")],
+        [InlineKeyboardButton(text="🏠 القائمة الرئيسية / Main Menu", callback_data="main_menu")]
     ])
     
     await callback.message.edit_text(success_msg, reply_markup=keyboard, parse_mode="Markdown")
@@ -248,14 +339,14 @@ async def get_otp_callback(callback: CallbackQuery):
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 تحديث الكود (OTP)", callback_data=f"get_otp_{num_id}")],
-        [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🔄 تحديث الكود / Refresh", callback_data=f"get_otp_{num_id}")],
+        [InlineKeyboardButton(text="🏠 القائمة الرئيسية / Main Menu", callback_data="main_menu")]
     ])
     
     msg = (
         f"📱 **الرقم:** `{data['phone']}`\n\n"
         f"📥 **حالة الكود (OTP):**\n{otp_text}\n\n"
-        f"💡 **ملاحظة:** قم بطلب كود التفعيل في تطبيق تيليجرام أولاً، ثم اضغط على زر **(🔄 تحديث الكود)** ليظهر لك الكود فوراً."
+        f"💡 اطلب الكود من التطبيق ثم اضغط تحديث."
     )
     try:
         await callback.message.edit_text(msg, reply_markup=keyboard, parse_mode="Markdown")
@@ -264,20 +355,27 @@ async def get_otp_callback(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    lang = get_user_language(user_id)
     await state.set_state(States.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text(
+    
+    text = (
         "💳 **شحن الرصيد عبر نجوم تليجرام:**\n\n"
         "🌟 **سعر الشحن:** كل 1 نجمة = 0.02$ (2 سنت)\n\n"
-        "أرسل عدد النجوم التي تريد شراءها (مثال: `10` أو `50`):",
-        reply_markup=keyboard, parse_mode="Markdown"
+        "أرسل عدد النجوم التي تريد شراءها (مثال: `10` أو `50`):"
+    ) if lang == 'ar' else (
+        "💳 **Recharge via Telegram Stars:**\n\n"
+        "🌟 **Rate:** 1 Star = $0.02\n\n"
+        "Send the number of stars you want (e.g. `10` or `50`):"
     )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.message(States.waiting_for_stars_count)
 async def process_custom_stars_input(message: Message, state: FSMContext):
     if not message.text.strip().isdigit():
-        await message.answer("❌ يرجى إدخال أرقام فقط:")
+        await message.answer("❌ يرجى إدخال أرقام فقط / Enter numbers only:")
         return
     stars_count = int(message.text.strip())
     added_balance = stars_count * STAR_PRICE_USD
@@ -310,34 +408,52 @@ async def process_successful_payment(message: Message):
         cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (added_balance, user_id))
         conn.commit()
         
-        await message.answer(f"🎉 **تم الشحن بنجاح!**\nتم إضافة `${added_balance:.2f}` إلى رصيدك مقابل `{stars_count}` نجمة.", parse_mode="Markdown")
+        await message.answer(f"🎉 **تم الشحن بنجاح!**\nتم إضافة `${added_balance:.2f}` إلى رصيدك بكل أمان في مجلد البيانات.", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "my_account")
 async def my_account(callback: CallbackQuery):
     user_id = callback.from_user.id
+    lang = get_user_language(user_id)
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-    balance = cursor.fetchone()[0]
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text(f"⚡ **تفاصيل حسابك:**\n\n🆔 المعرف: `{user_id}`\n💵 الرصيد المتاح: `${balance:.2f}`", reply_markup=keyboard, parse_mode="Markdown")
+    row = cursor.fetchone()
+    balance = row[0] if row else 0.0
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع / Back", callback_data="main_menu")]])
+    text = (
+        f"⚡ **تفاصيل حسابك (محفوظة بالكامل):**\n\n"
+        f"🆔 المعرف: `{user_id}`\n"
+        f"💵 الرصيد المتاح: `${balance:.2f}`\n"
+        f"*(سنتاتك محفوظة بأمان في مجلد Volume ولن تختفي أبداً)*"
+    ) if lang == 'ar' else (
+        f"⚡ **Your Account Details:**\n\n"
+        f"🆔 ID: `{user_id}`\n"
+        f"💵 Available Balance: `${balance:.2f}`\n"
+        f"*(Your balance is securely saved)*"
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "claim_bonus")
 async def claim_bonus(callback: CallbackQuery):
     user_id = callback.from_user.id
+    lang = get_user_language(user_id)
     cursor.execute("SELECT last_bonus, balance FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
-    last_bonus_str = row[0]
+    last_bonus_str = row[0] if row else None
     
     now = datetime.now()
     if last_bonus_str:
         last_bonus = datetime.fromisoformat(last_bonus_str)
         if now - last_bonus < timedelta(hours=24):
-            await callback.answer("❌ لقد حصلت على هديتك اليومية بالفعل، عد غداً!", show_alert=True)
+            msg = "❌ لقد حصلت على هديتك اليومية بالفعل، عد غداً!" if lang == 'ar' else "❌ You have already claimed your daily bonus, come back tomorrow!"
+            await callback.answer(msg, show_alert=True)
             return
 
     cursor.execute("UPDATE users SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (BONUS_AMOUNT, now.isoformat(), user_id))
     conn.commit()
-    await callback.answer(f"🎉 تم إضافة ${BONUS_AMOUNT:.2f} (سنت واحد) إلى رصيدك!", show_alert=True)
+    
+    success_msg = f"🎉 تم إضافة ${BONUS_AMOUNT:.2f} إلى رصيدك بنجاح!" if lang == 'ar' else f"🎉 Added ${BONUS_AMOUNT:.2f} to your balance!"
+    await callback.answer(success_msg, show_alert=True)
     text, keyboard = get_main_keyboard(user_id)
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -346,43 +462,53 @@ async def claim_bonus(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "ref_menu")
 async def ref_menu(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    lang = get_user_language(user_id)
     bot_info = await bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start=ref_{callback.from_user.id}"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text(
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع / Back", callback_data="main_menu")]])
+    
+    text = (
         f"🤝 **رابط الإحالة الخاص بك:**\n`{ref_link}`\n\n"
-        f"احصل على **${BONUS_AMOUNT:.2f}** (سنت واحد) فوراً عن كل شخص يسجل من رابطك!", 
-        reply_markup=keyboard, parse_mode="Markdown"
+        f"احصل على **${BONUS_AMOUNT:.2f}** فوراً عن كل شخص يسجل من رابطك وتضاف مباشرة لمجلد البيانات الدائم!"
+    ) if lang == 'ar' else (
+        f"🤝 **Your Referral Link:**\n`{ref_link}`\n\n"
+        f"Get **${BONUS_AMOUNT:.2f}** for each referral added securely!"
     )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "transfer_menu")
 async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    lang = get_user_language(user_id)
     await state.set_state(States.waiting_for_transfer_id)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-    await callback.message.edit_text("💳 أرسل آيدي (User ID) الشخص المراد تحويل الرصيد له:", reply_markup=keyboard, parse_mode="Markdown")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع / Back", callback_data="main_menu")]])
+    prompt = "💳 أرسل آيدي (User ID) الشخص المراد تحويل الرصيد له:" if lang == 'ar' else "💳 Send recipient User ID:"
+    await callback.message.edit_text(prompt, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.message(States.waiting_for_transfer_id)
 async def process_transfer_id(message: Message, state: FSMContext):
     if not message.text.strip().isdigit():
-        await message.answer("❌ يرجى إدخال ID صحيح:")
+        await message.answer("❌ يرجى إدخال ID صحيح / Enter valid ID:")
         return
     await state.update_data(recipient_id=int(message.text.strip()))
     await state.set_state(States.waiting_for_transfer_amount)
-    await message.answer("✍️ أرسل المبلغ المراد تحويله:")
+    await message.answer("✍️ أرسل المبلغ المراد تحويله (مثال: `0.02`):")
 
 @dp.message(States.waiting_for_transfer_amount)
 async def process_transfer_amount(message: Message, state: FSMContext):
     try:
         amount = float(message.text.strip().replace("$", ""))
     except ValueError:
-        await message.answer("❌ أدخل مبلغاً صحيحاً:")
+        await message.answer("❌ أدخل مبلغاً صحيحاً / Enter valid amount:")
         return
     
     sender_id = message.from_user.id
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (sender_id,))
-    sender_balance = cursor.fetchone()[0]
+    row = cursor.fetchone()
+    sender_balance = row[0] if row else 0.0
     
     if sender_balance < amount:
         await message.answer("❌ رصيدك الحالي لا يكفي لإتمام عملية التحويل!")
@@ -392,6 +518,13 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     data = await state.get_data()
     recipient_id = data.get("recipient_id")
     
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (recipient_id,))
+    rec_row = cursor.fetchone()
+    if not rec_row:
+        await message.answer("❌ المستخدم المراد التحويل له غير مسجل في البوت.")
+        await state.clear()
+        return
+
     cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, sender_id))
     cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, recipient_id))
     conn.commit()
@@ -400,8 +533,8 @@ async def process_transfer_amount(message: Message, state: FSMContext):
 
 # 🛠️ دالة جلب واستخراج كود OTP
 async def fetch_otp_async(session_str, api_id, api_hash):
-    if not session_str:
-        return "❌ لا توجد جلسة لهذا الرقم!"
+    if not session_str or "ضع_جلسة" in session_str:
+        return "❌ لم يتم ضبط جلسة هذا الرقم بعد من قبل الإدارة!"
     try:
         client = TelegramClient(StringSession(session_str), api_id, api_hash)
         await client.connect()
@@ -430,7 +563,7 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         return f"❌ خطأ أثناء الاتصال بالجلسة: {str(e)}"
 
 async def main():
-    print("جاري تشغيل بوت الأرقام الأساسي...")
+    print("جاري تشغيل البوت مع الأسعار الجديدة وتحديثات مجلد البيانات...")
     try:
         await bot.delete_webhook(drop_pending_updates=True)
     except Exception:
