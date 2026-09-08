@@ -85,10 +85,10 @@ NUMBERS_STORE = {
         "country": "colombia", 
         "name": "🇨🇴 كولومبيا", 
         "price": COLOMBIA_NUMBER_PRICE, 
-        "phone": "+57XXXXXXXXX", # استبدله برقمك الكولومبي الحقيقي لاحقاً
-        "session": "ضع_جلسة_كولومبيا_هنا_عندما_تجهزها", # حط سيشن كولومبيا هنا
-        "api_id": 1234567, # استبدلها بـ api_id الخاص بكولومبيا
-        "api_hash": "your_colombia_api_hash" # استبدلها بـ api_hash الخاص بكولومبيا
+        "phone": "+57XXXXXXXXX", 
+        "session": "ضع_جلسة_كولومبيا_هنا_عندما_تجهزها", 
+        "api_id": 1234567, 
+        "api_hash": "your_colombia_api_hash" 
     }
 }
 
@@ -579,13 +579,22 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         return f"❌ خطأ أثناء الاتصال بالجلسة / Connection error: {str(e)}"
 
 async def main():
-    print("جاري تشغيل البوت مع الأسعار الجديدة وتحديثات مجلد البيانات...")
+    print("جاري تشغيل البوت وتصفير أي ويب هوك قديم لضمان الاتصال المستقر...")
+    # إغلاق أي جلسات قديمة وتصفير الويب هوك بشكل نظيف تماماً لتجنب الأخطاء
+    await bot.delete_webhook(drop_pending_updates=True)
+    
+    # بدء البوت بسلاسة مع التعامل مع الأخطاء المؤقتة للشبكة
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
-    await asyncio.sleep(1)
-    await dp.start_polling(bot, close_bot_session=True)
+        await dp.start_polling(
+            bot, 
+            close_bot_session=True,
+            allowed_updates=dp.resolve_used_update_types()
+        )
+    finally:
+        await bot.session.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("تم إيقاف البوت بنجاح.")
