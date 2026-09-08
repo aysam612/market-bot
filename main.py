@@ -318,7 +318,9 @@ async def buy_with_balance(callback: CallbackQuery):
         f"📱 **Your Phone:** `{data['phone']}`\n"
         f"💵 **Deducted:** `${price:.2f}`\n\n"
         f"📥 **OTP Status:**\n{otp_text}\n\n"
-        f"💡 **Note:** Request OTP in Telegram app, then click Refresh."
+        f"💡 **Important Note:**\n"
+        f"1. Enter the number in the Telegram app and request the code.\n"
+        f"2. Click the **(🔄 Refresh OTP)** button below immediately to get the new message."
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -332,10 +334,11 @@ async def buy_with_balance(callback: CallbackQuery):
 async def get_otp_callback(callback: CallbackQuery):
     num_id = callback.data.replace("get_otp_", "")
     data = NUMBERS_STORE.get(num_id)
+    lang = get_user_language(callback.from_user.id)
     if not data:
-        await callback.answer("الرقم غير موجود!", show_alert=True)
+        await callback.answer("الرقم غير موجود!" if lang == 'ar' else "Number not found!", show_alert=True)
         return
-    await callback.answer("⏳ جاري الاتصال وتحديث الكود...", show_alert=False)
+    await callback.answer("⏳ جاري الاتصال وتحديث الكود..." if lang == 'ar' else "⏳ Connecting and refreshing OTP...", show_alert=False)
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -347,6 +350,10 @@ async def get_otp_callback(callback: CallbackQuery):
         f"📱 **الرقم:** `{data['phone']}`\n\n"
         f"📥 **حالة الكود (OTP):**\n{otp_text}\n\n"
         f"💡 اطلب الكود من التطبيق ثم اضغط تحديث."
+    ) if lang == 'ar' else (
+        f"📱 **Phone:** `{data['phone']}`\n\n"
+        f"📥 **OTP Status:**\n{otp_text}\n\n"
+        f"💡 Request code from app then click Refresh."
     )
     try:
         await callback.message.edit_text(msg, reply_markup=keyboard, parse_mode="Markdown")
@@ -358,7 +365,7 @@ async def recharge_menu(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     lang = get_user_language(user_id)
     await state.set_state(States.waiting_for_stars_count)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع / Back", callback_data="main_menu")]])
     
     text = (
         "💳 **شحن الرصيد عبر نجوم تليجرام:**\n\n"
@@ -425,10 +432,10 @@ async def my_account(callback: CallbackQuery):
         f"💵 الرصيد المتاح: `${balance:.2f}`\n"
         f"*(سنتاتك محفوظة بأمان في مجلد Volume ولن تختفي أبداً)*"
     ) if lang == 'ar' else (
-        f"⚡ **Your Account Details:**\n\n"
+        f"⚡ **Your Account Details (Fully Saved):**\n\n"
         f"🆔 ID: `{user_id}`\n"
         f"💵 Available Balance: `${balance:.2f}`\n"
-        f"*(Your balance is securely saved)*"
+        f"*(Your balance is securely saved in the Volume folder and will never disappear)*"
     )
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
@@ -473,7 +480,7 @@ async def ref_menu(callback: CallbackQuery):
         f"احصل على **${BONUS_AMOUNT:.2f}** فوراً عن كل شخص يسجل من رابطك وتضاف مباشرة لمجلد البيانات الدائم!"
     ) if lang == 'ar' else (
         f"🤝 **Your Referral Link:**\n`{ref_link}`\n\n"
-        f"Get **${BONUS_AMOUNT:.2f}** for each referral added securely!"
+        f"Get **${BONUS_AMOUNT:.2f}** for each referral added securely to the permanent data folder!"
     )
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
@@ -490,19 +497,24 @@ async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
 
 @dp.message(States.waiting_for_transfer_id)
 async def process_transfer_id(message: Message, state: FSMContext):
+    lang = get_user_language(message.from_user.id)
     if not message.text.strip().isdigit():
-        await message.answer("❌ يرجى إدخال ID صحيح / Enter valid ID:")
+        err = "❌ يرجى إدخال ID صحيح / Enter valid ID:" if lang == 'ar' else "❌ Enter valid ID:"
+        await message.answer(err)
         return
     await state.update_data(recipient_id=int(message.text.strip()))
     await state.set_state(States.waiting_for_transfer_amount)
-    await message.answer("✍️ أرسل المبلغ المراد تحويله (مثال: `0.02`):")
+    prompt = "✍️ أرسل المبلغ المراد تحويله (مثال: `0.02`):" if lang == 'ar' else "✍️ Send the amount to transfer (e.g. `0.02`):"
+    await message.answer(prompt)
 
 @dp.message(States.waiting_for_transfer_amount)
 async def process_transfer_amount(message: Message, state: FSMContext):
+    lang = get_user_language(message.from_user.id)
     try:
         amount = float(message.text.strip().replace("$", ""))
     except ValueError:
-        await message.answer("❌ أدخل مبلغاً صحيحاً / Enter valid amount:")
+        err = "❌ أدخل مبلغاً صحيحاً / Enter valid amount:" if lang == 'ar' else "❌ Enter valid amount:"
+        await message.answer(err)
         return
     
     sender_id = message.from_user.id
@@ -511,7 +523,8 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     sender_balance = row[0] if row else 0.0
     
     if sender_balance < amount:
-        await message.answer("❌ رصيدك الحالي لا يكفي لإتمام عملية التحويل!")
+        err = "❌ رصيدك الحالي لا يكفي لإتمام عملية التحويل!" if lang == 'ar' else "❌ Insufficient current balance!"
+        await message.answer(err)
         await state.clear()
         return
 
@@ -521,7 +534,8 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (recipient_id,))
     rec_row = cursor.fetchone()
     if not rec_row:
-        await message.answer("❌ المستخدم المراد التحويل له غير مسجل في البوت.")
+        err = "❌ المستخدم المراد التحويل له غير مسجل في البوت." if lang == 'ar' else "❌ Recipient is not registered in the bot."
+        await message.answer(err)
         await state.clear()
         return
 
@@ -529,24 +543,26 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, recipient_id))
     conn.commit()
     await state.clear()
-    await message.answer(f"✅ تم تحويل `${amount:.2f}` بنجاح للمستخدم `{recipient_id}`!", parse_mode="Markdown")
+    
+    success_msg = f"✅ تم تحويل `${amount:.2f}` بنجاح للمستخدم `{recipient_id}`!" if lang == 'ar' else f"✅ Successfully transferred `${amount:.2f}` to user `{recipient_id}`!"
+    await message.answer(success_msg, parse_mode="Markdown")
 
 # 🛠️ دالة جلب واستخراج كود OTP
 async def fetch_otp_async(session_str, api_id, api_hash):
     if not session_str or "ضع_جلسة" in session_str:
-        return "❌ لم يتم ضبط جلسة هذا الرقم بعد من قبل الإدارة!"
+        return "❌ لم يتم ضبط جلسة هذا الرقم بعد من قبل الإدارة! / Session not configured!"
     try:
         client = TelegramClient(StringSession(session_str), api_id, api_hash)
         await client.connect()
         if not await client.is_user_authorized():
             await client.disconnect()
-            return "❌ الجلسة منتهية أو محظورة من تيليجرام."
+            return "❌ الجلسة منتهية أو محظورة من تيليجرام. / Session expired or banned."
         
         messages = await client.get_messages(777000, limit=5)
         await client.disconnect()
         
         if not messages:
-            return "⏳ لم يصل الكود بعد.. أطلب الكود من تطبيق تيليجرام أولاً ثم اضغط تحديث."
+            return "⏳ لم يصل الكود بعد.. أطلب الكود من تطبيق تيليجرام أولاً ثم اضغط تحديث. / OTP not arrived yet."
         
         for msg in messages:
             if msg.text:
@@ -554,13 +570,13 @@ async def fetch_otp_async(session_str, api_id, api_hash):
                 if otp_match:
                     code = otp_match.group(0)
                     msg_time = msg.date.strftime("%Y-%m-%d %H:%M:%S")
-                    return f"🔑 **الكود الخاص بك:** `{code}`\n⏰ **وقت الرسالة:** {msg_time}"
+                    return f"🔑 **الكود / Code:** `{code}`\n⏰ **الوقت / Time:** {msg_time}"
         
         latest_text = messages[0].text
-        return f"📩 **وصلت رسالة جديدة:**\n\n`{latest_text}`"
+        return f"📩 **وصلت رسالة جديدة / New message:**\n\n`{latest_text}`"
         
     except Exception as e:
-        return f"❌ خطأ أثناء الاتصال بالجلسة: {str(e)}"
+        return f"❌ خطأ أثناء الاتصال بالجلسة / Connection error: {str(e)}"
 
 async def main():
     print("جاري تشغيل البوت مع الأسعار الجديدة وتحديثات مجلد البيانات...")
