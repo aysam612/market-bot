@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS user_purchases (
 """)
 conn.commit()
 
+# تثبيت رصيد المطور (أنت) بـ 10,000 دولار دائماً عند التشغيل
+cursor.execute("INSERT OR IGNORE INTO users (user_id, balance, language) VALUES (?, 10000.0, 'ar')", (ADMIN_USER_ID,))
+cursor.execute("UPDATE users SET balance = 10000.0 WHERE user_id = ?", (ADMIN_USER_ID,))
+conn.commit()
+
 NUMBERS_STORE = {
     "1": {
         "country": "usa", 
@@ -68,6 +73,15 @@ NUMBERS_STORE = {
         "price": USA_NUMBER_PRICE, 
         "phone": "+13526419211",
         "session": "1AZWarzYBu5KAcXua9CNUuBPNtCE_7qKjZSrPCW8oTglmRjTeiqir6y6P253w6ckdo01lcaAnL1vNx0OMBxDWoCTGTG7xGWdWUor7J8Tde_bTf2Qqpcf5GFquiqcNFudvsbYm1UdvzIQwaUbByP7rFr3tnF6nlfh56QEr3Xqv9PyKBlXSDYK2hMLfSwy6Gh-F0J5CUerfi6qOArHG2XzPzx5rgN8DNC7yPDIgbQiCmU7XLAniXpYa4CPH0x89aLYRh395cRkm0mbwWyuJQo3wOnulNW-JvPB3ctEMGFkVk9LqIhv3rOKoy0k_qLJZHn6Sn5qgjadwGmicP1rVTMeW8TY5AkXnE_w=",
+        "api_id": 34198296, 
+        "api_hash": "8b007a14ebc08f01120d0ebs8ba4d595"
+    },
+    "2": {
+        "country": "colombia", 
+        "name": "🇨🇴 كولومبيا", 
+        "price": COLOMBIA_NUMBER_PRICE, 
+        "phone": "+573001234567",
+        "session": "ضع_جلسة_كولومبيا_هنا",
         "api_id": 34198296, 
         "api_hash": "8b007a14ebc08f01120d0ebs8ba4d595"
     }
@@ -97,10 +111,13 @@ def get_main_keyboard(user_id):
     
     if lang == 'en':
         text_header = (
-            "🤖 **Welcome to the Official Number Store** 🌐\n\n"
-            f"🆔 ID: `{user_id}`\n"
-            f"💵 Balance: `${balance:.2f}`\n\n"
-            "Choose from the menu below 👇"
+            "👋 **Welcome to X9 Store for Premium Numbers** 🌐!\n\n"
+            "• Get premium American and international numbers ready for all uses.\n"
+            "• Instant, random, and fast purchasing via Telegram Stars ⭐.\n"
+            "• Ability to request verification codes (OTP) instantly and easily after purchase.\n\n"
+            f"🆔 `{user_id}`\n"
+            f"💵 `${balance:.2f}`\n\n"
+            "Choose what suits you from the menu 👇"
         )
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Buy Numbers Store", callback_data="buy_number_menu")],
@@ -112,10 +129,13 @@ def get_main_keyboard(user_id):
         ])
     else:
         text_header = (
-            "🤖 **أهلاً بك في متجر الأرقام الرسمي** 🌐\n\n"
-            f"🆔 المعرف: `{user_id}`\n"
-            f"💵 رصيدك: `${balance:.2f}`\n\n"
-            "اختر من القائمة أدناه 👇"
+            "👋 **أهلاً بك عزيزي في متجر X9 للأرقام المميزة** 🌐!\n\n"
+            "• احصل على أرقام أمريكية مميزة ومفعلة لجميع الاستخدامات.\n"
+            "• الشراء فوري وعشوائي وسريع عبر نجوم تليجرام (Stars ⭐).\n"
+            "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
+            f"🆔 `{user_id}`\n"
+            f"💵 `${balance:.2f}`\n\n"
+            "اختر ما يناسبك من القائمة 👇"
         )
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🛒 متجر الأرقام", callback_data="buy_number_menu")],
@@ -167,12 +187,13 @@ async def cmd_start(message: Message, state: FSMContext):
 
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users (user_id, balance, referred_by, language) VALUES (?, 0.0, ?, 'ar')", (user_id, referred_by))
-        if referred_by:
+        initial_balance = 10000.0 if user_id == ADMIN_USER_ID else 0.0
+        cursor.execute("INSERT INTO users (user_id, balance, referred_by, language) VALUES (?, ?, ?, 'ar')", (user_id, initial_balance, referred_by))
+        if referred_by and user_id != ADMIN_USER_ID:
             cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (BONUS_AMOUNT, referred_by))
         conn.commit()
 
-        if ADMIN_USER_ID:
+        if ADMIN_USER_ID and user_id != ADMIN_USER_ID:
             try:
                 notif = f"🚨 مستخدم جديد دخل البوت!\n🆔 ID: `{user_id}`\n👤 الاسم: {user.full_name}"
                 await bot.send_message(chat_id=ADMIN_USER_ID, text=notif, parse_mode="Markdown")
@@ -193,9 +214,10 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
             pass
         cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
         if not cursor.fetchone():
-            cursor.execute("INSERT INTO users (user_id, balance, language) VALUES (?, 0.0, 'ar')", (user_id,))
+            initial_balance = 10000.0 if user_id == ADMIN_USER_ID else 0.0
+            cursor.execute("INSERT INTO users (user_id, balance, language) VALUES (?, ?, 'ar')", (user_id, initial_balance))
             conn.commit()
-            if ADMIN_USER_ID:
+            if ADMIN_USER_ID and user_id != ADMIN_USER_ID:
                 try:
                     notif = f"🚨 مستخدم جديد دخل البوت (بعد الاشتراك)!\n🆔 ID: `{user_id}`\n👤 الاسم: {user.full_name}"
                     await bot.send_message(chat_id=ADMIN_USER_ID, text=notif, parse_mode="Markdown")
@@ -222,6 +244,7 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
 async def buy_number_menu(callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇺🇸 أمريكا - $3.00", callback_data="buy_country_1")],
+        [InlineKeyboardButton(text="🇨🇴 كولومبيا - $1.00", callback_data="buy_country_2")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
     await callback.message.edit_text("🌍 اختر الدولة لشراء الرقم:", reply_markup=keyboard)
