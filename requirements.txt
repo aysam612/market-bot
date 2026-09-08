@@ -1,2 +1,3 @@
-python-telegram-bot
+aiogram
+telethon
 psycopg2-binary
