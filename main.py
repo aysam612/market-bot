@@ -14,9 +14,13 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from pymongo import MongoClient
 
 # توكن البوت
 BOT_TOKEN = "8896024185:AAGdsd0J6iCt2ipEss3oYi18tPUwOKtobCI"
+
+# رابط MongoDB Atlas الذي أنشأته
+MONGO_URI = "mongodb+srv://aysamaysam426_db_user:MeBfCxpAl4AK2eG2@aysam.ut0hpt5.mongodb.net/?appName=aysam"
 
 ADMIN_USERNAME = "aaysam"
 ADMIN_USER_ID = 8863784148
@@ -31,42 +35,25 @@ STAR_PRICE_USD = 0.02
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# تهيئة اتصال MongoDB (بدلاً من sqlite3 المحلية لضمان عدم ضياع البيانات)
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client["x9_store_db"]
+users_collection = db["users"]
+purchases_collection = db["user_purchases"]
+
 class States(StatesGroup):
     waiting_for_stars_count = State()
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
 
-def get_db_connection():
-    conn = sqlite3.connect("market.db")
-    return conn
-
 def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        balance REAL DEFAULT 0.0,
-        last_bonus TEXT,
-        referred_by INTEGER,
-        language TEXT DEFAULT 'ar'
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS user_purchases (
-        user_id INTEGER,
-        number_id TEXT,
-        PRIMARY KEY (user_id, number_id)
-    )
-    """)
-    conn.commit()
-
-    cursor.execute("INSERT OR REPLACE INTO users (user_id, balance, language) VALUES (?, 10000.0, 'ar')", (ADMIN_USER_ID,))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    # التأكد من وجود مستخدم الأدمن في قاعدة بيانات MongoDB
+    if not users_collection.find_one({"user_id": ADMIN_USER_ID}):
+        users_collection.insert_one({
+            "user_id": ADMIN_USER_ID,
+            "balance": 10000.0,
+            "language": "ar"
+        })
 
 NUMBERS_STORE = {
     "1": {
@@ -101,24 +88,13 @@ async def check_subscription(user_id: int) -> bool:
     return False
 
 def get_user_language(user_id: int) -> str:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return row[0] if row else 'ar'
+    user = users_collection.find_one({"user_id": user_id})
+    return user.get("language", "ar") if user else "ar"
 
 def get_main_keyboard(user_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance, language FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    
-    balance = row[0] if row and row[0] is not None else 0.0
-    lang = row[1] if row and len(row) > 1 else 'ar'
+    user = users_collection.find_one({"user_id": user_id})
+    balance = user.get("balance", 0.0) if user else 0.0
+    lang = user.get("language", "ar") if user else "ar"
     
     if lang == 'en':
         text_header = (
@@ -164,12 +140,7 @@ async def toggle_lang_callback(callback: CallbackQuery):
     current_lang = get_user_language(user_id)
     new_lang = 'en' if current_lang == 'ar' else 'ar'
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET language = ? WHERE user_id = ?", (new_lang, user_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    users_collection.update_one({"user_id": user_id}, {"$set": {"language": new_lang}}, upsert=True)
     
     text, keyboard = get_main_keyboard(user_id)
     try:
@@ -202,15 +173,17 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(f"⚠️ يجب عليك الاشتراك في القناة أولاً: @{REQUIRED_CHANNEL}", reply_markup=sub_keyboard)
         return
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-    if not cursor.fetchone():
+    existing_user = users_collection.find_one({"user_id": user_id})
+    if not existing_user:
         initial_balance = 10000.0 if user_id == ADMIN_USER_ID else 0.0
-        cursor.execute("INSERT INTO users (user_id, balance, referred_by, language) VALUES (?, ?, ?, 'ar')", (user_id, initial_balance, referred_by))
+        users_collection.insert_one({
+            "user_id": user_id,
+            "balance": initial_balance,
+            "referred_by": referred_by,
+            "language": "ar"
+        })
         if referred_by and user_id != ADMIN_USER_ID:
-            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (BONUS_AMOUNT, referred_by))
-        conn.commit()
+            users_collection.update_one({"user_id": referred_by}, {"$inc": {"balance": BONUS_AMOUNT}})
 
         if ADMIN_USER_ID and user_id != ADMIN_USER_ID:
             try:
@@ -218,8 +191,6 @@ async def cmd_start(message: Message, state: FSMContext):
                 await bot.send_message(chat_id=ADMIN_USER_ID, text=notif, parse_mode="Markdown")
             except Exception:
                 pass
-    cursor.close()
-    conn.close()
 
     text, keyboard = get_main_keyboard(user_id)
     await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -234,15 +205,14 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
         except Exception:
             pass
             
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-        if not cursor.fetchone():
+        existing_user = users_collection.find_one({"user_id": user_id})
+        if not existing_user:
             initial_balance = 10000.0 if user_id == ADMIN_USER_ID else 0.0
-            cursor.execute("INSERT INTO users (user_id, balance, language) VALUES (?, ?, 'ar')", (user_id, initial_balance))
-            conn.commit()
-        cursor.close()
-        conn.close()
+            users_collection.insert_one({
+                "user_id": user_id,
+                "balance": initial_balance,
+                "language": "ar"
+            })
 
         text, keyboard = get_main_keyboard(user_id)
         await callback.message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -265,15 +235,11 @@ async def buy_number_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
     lang = get_user_language(user_id)
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
     buttons = []
     for num_id, data in NUMBERS_STORE.items():
-        cursor.execute("SELECT 1 FROM user_purchases WHERE user_id = ? AND number_id = ?", (user_id, num_id))
-        if not cursor.fetchone():
+        purchased = purchases_collection.find_one({"user_id": user_id, "number_id": num_id})
+        if not purchased:
             buttons.append([InlineKeyboardButton(text=f"{data['name']} - ${data['price']:.2f}", callback_data=f"buy_country_{num_id}")])
-    cursor.close()
-    conn.close()
     
     if lang == 'en':
         buttons.append([InlineKeyboardButton(text="🔙 Back", callback_data="main_menu")])
@@ -292,13 +258,7 @@ async def buy_country_handler(callback: CallbackQuery):
     lang = get_user_language(user_id)
     num_id = callback.data.replace("buy_country_", "")
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM user_purchases WHERE user_id = ? AND number_id = ?", (user_id, num_id))
-    already_purchased = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    
+    already_purchased = purchases_collection.find_one({"user_id": user_id, "number_id": num_id})
     if already_purchased:
         msg = "❌ You have already purchased this number!" if lang == 'en' else "❌ لقد اشتريت هذا الرقم مسبقاً!"
         await callback.answer(msg, show_alert=True)
@@ -331,24 +291,16 @@ async def buy_with_balance(callback: CallbackQuery):
     num_id = callback.data.replace("buy_balance_", "")
     data = NUMBERS_STORE.get(num_id)
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    balance = row[0] if row else 0.0
+    user_doc = users_collection.find_one({"user_id": user_id})
+    balance = user_doc.get("balance", 0.0) if user_doc else 0.0
     
     if balance < data['price']:
-        cursor.close()
-        conn.close()
         msg = "❌ Insufficient balance!" if lang == 'en' else "❌ رصيدك غير كافي!"
         await callback.answer(msg, show_alert=True)
         return
         
-    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (data['price'], user_id))
-    cursor.execute("INSERT INTO user_purchases (user_id, number_id) VALUES (?, ?)", (user_id, num_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    users_collection.update_one({"user_id": user_id}, {"$inc": {"balance": -data['price']}})
+    purchases_collection.insert_one({"user_id": user_id, "number_id": num_id})
     
     wait_msg = "⏳ Fetching code..." if lang == 'en' else "⏳ جاري جلب الكود..."
     await callback.answer(wait_msg, show_alert=False)
@@ -408,14 +360,9 @@ async def my_account(callback: CallbackQuery):
     user_id = callback.from_user.id
     lang = get_user_language(user_id)
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    user_doc = users_collection.find_one({"user_id": user_id})
+    balance = user_doc.get("balance", 0.0) if user_doc else 0.0
     
-    balance = row[0] if row else 0.0
     back_text = "🔙 Back" if lang == 'en' else "🔙 رجوع"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=back_text, callback_data="main_menu")]])
     text_content = f"🆔 ID: `{user_id}`\n💵 Available Balance: `${balance:.2f}`" if lang == 'en' else f"🆔 المعرف: `{user_id}`\n💵 الرصيد المتاح: `${balance:.2f}`"
@@ -427,25 +374,20 @@ async def claim_bonus(callback: CallbackQuery):
     user_id = callback.from_user.id
     lang = get_user_language(user_id)
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT last_bonus FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    last_bonus_str = row[0] if row else None
+    user_doc = users_collection.find_one({"user_id": user_id})
+    last_bonus_str = user_doc.get("last_bonus") if user_doc else None
     
     now = datetime.now()
     if last_bonus_str:
         if now - datetime.fromisoformat(last_bonus_str) < timedelta(hours=24):
-            cursor.close()
-            conn.close()
             msg = "❌ You have already claimed your daily bonus!" if lang == 'en' else "❌ لقد حصلت على هديتك اليومية مسبقاً!"
             await callback.answer(msg, show_alert=True)
             return
             
-    cursor.execute("UPDATE users SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (BONUS_AMOUNT, now.isoformat(), user_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    users_collection.update_one(
+        {"user_id": user_id}, 
+        {"$inc": {"balance": BONUS_AMOUNT}, "$set": {"last_bonus": now.isoformat()}}
+    )
     
     msg_success = f"🎉 Successfully added ${BONUS_AMOUNT:.2f}!" if lang == 'en' else f"🎉 تم إضافة ${BONUS_AMOUNT:.2f} بنجاح!"
     await callback.answer(msg_success, show_alert=True)
@@ -499,14 +441,10 @@ async def process_transfer_amount(message: Message, state: FSMContext):
         return
         
     sender_id = message.from_user.id
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    sender_doc = users_collection.find_one({"user_id": sender_id})
+    sender_balance = sender_doc.get("balance", 0.0) if sender_doc else 0.0
     
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (sender_id,))
-    row = cursor.fetchone()
-    if not row or row[0] < amount:
-        cursor.close()
-        conn.close()
+    if sender_balance < amount:
         await message.answer("❌ Your current balance is not enough! / رصيدك الحالي لا يكفي!")
         await state.clear()
         return
@@ -514,19 +452,14 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     data = await state.get_data()
     recipient_id = data.get("recipient_id")
     
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (recipient_id,))
-    if not cursor.fetchone():
-        cursor.close()
-        conn.close()
+    recipient_doc = users_collection.find_one({"user_id": recipient_id})
+    if not recipient_doc:
         await message.answer("❌ User not registered. / المستخدم غير مسجل.")
         await state.clear()
         return
         
-    cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, sender_id))
-    cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, recipient_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    users_collection.update_one({"user_id": sender_id}, {"$inc": {"balance": -amount}})
+    users_collection.update_one({"user_id": recipient_id}, {"$inc": {"balance": amount}})
     
     await state.clear()
     await message.answer(f"✅ Successfully transferred `${amount:.2f}` to user `{recipient_id}`!", parse_mode="Markdown")
@@ -576,12 +509,7 @@ async def success_pay(message: Message):
         stars = int(payload.replace("recharge_", ""))
         added = stars * STAR_PRICE_USD
         
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (added, message.from_user.id))
-        conn.commit()
-        cursor.close()
-        conn.close()
+        users_collection.update_one({"user_id": message.from_user.id}, {"$inc": {"balance": added}})
         
         msg = f"🎉 Successfully recharged `${added:.2f}` to your balance!" if lang == 'en' else f"🎉 تم شحن `${added:.2f}` بنجاح إلى رصيدك!"
         await message.answer(msg)
