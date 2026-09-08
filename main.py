@@ -36,7 +36,6 @@ class States(StatesGroup):
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
 
-# استخدام قاعدة بيانات محلية SQLite لتخزين الأرصدة والبيانات
 def get_db_connection():
     conn = sqlite3.connect("market.db")
     return conn
@@ -64,7 +63,6 @@ def init_db():
     """)
     conn.commit()
 
-    # تثبيت رصيد المطور
     cursor.execute("INSERT OR REPLACE INTO users (user_id, balance, language) VALUES (?, 10000.0, 'ar')", (ADMIN_USER_ID,))
     conn.commit()
     cursor.close()
@@ -125,6 +123,9 @@ def get_main_keyboard(user_id):
     if lang == 'en':
         text_header = (
             "👋 **Welcome to X9 Store for Premium Numbers** 🌐!\n\n"
+            "• Get premium numbers activated for all uses.\n"
+            "• Instant, random, and fast purchase using Telegram Stars (⭐).\n"
+            "• Ability to request the verification code (OTP) instantly and easily after purchase.\n\n"
             f"🆔 `{user_id}`\n"
             f"💵 `${balance:.2f}`\n\n"
             "Choose what suits you from the menu 👇"
@@ -139,7 +140,10 @@ def get_main_keyboard(user_id):
         ])
     else:
         text_header = (
-            "👋 **أهلاً بك عزيزي في متجر X9 للأرقام المميزة** 🌐!\n\n"
+            "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
+            "• احصل على أرقام أمريكية وعالمية مميزة ومفعلة لجميع الاستخدامات.\n"
+            "• الشراء فوري وسريع عبر رصيد البوت أو نجوم تليجرام (Stars ⭐).\n"
+            "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
             f"🆔 `{user_id}`\n"
             f"💵 `${balance:.2f}`\n\n"
             "اختر ما يناسبك من القائمة 👇"
@@ -273,13 +277,13 @@ async def buy_number_menu(callback: CallbackQuery):
     
     if lang == 'en':
         buttons.append([InlineKeyboardButton(text="🔙 Back", callback_data="main_menu")])
-        text_msg = "🌍 Choose a country to buy a number:"
+        text_msg = "🌍 Choose a country to buy a number:\n\n⚠️ **Important Notice:** There is **no compensation under any circumstances** if you log out of the account, or if the number is banned, pulled, or locked after purchase."
     else:
         buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")])
-        text_msg = "🌍 اختر الدولة لشراء الرقم:"
+        text_msg = "🌍 اختر الدولة لشراء الرقم:\n\n⚠️ **تنبيه هام:** **لا يوجد تعويض بأي شكل من الأشكال** في حال تم تسجيل الخروج من الحساب، أو في حال تم سحب، قفل، أو حظر الرقم بعد إتمام الشراء."
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await callback.message.edit_text(text_msg, reply_markup=keyboard)
+    await callback.message.edit_text(text_msg, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_country_"))
@@ -311,13 +315,13 @@ async def buy_country_handler(callback: CallbackQuery):
             [InlineKeyboardButton(text=f"Confirm Purchase for ${data['price']:.2f}", callback_data=f"buy_balance_{num_id}")],
             [InlineKeyboardButton(text="🔙 Back", callback_data="buy_number_menu")]
         ])
-        await callback.message.edit_text(f"Country: {data['name']}\nPrice: **${data['price']:.2f}**\n\nDo you want to confirm the purchase?", reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(f"Country: {data['name']}\nPrice: **${data['price']:.2f}**\n\n⚠️ Note: No compensation under any circumstances (including logout).\n\nDo you want to confirm the purchase?", reply_markup=keyboard, parse_mode="Markdown")
     else:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"تأكيد الشراء مقابل ${data['price']:.2f}", callback_data=f"buy_balance_{num_id}")],
             [InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]
         ])
-        await callback.message.edit_text(f"الدولة: {data['name']}\nالسعر: **${data['price']:.2f}**\n\nهل تريد تأكيد الشراء؟", reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(f"الدولة: {data['name']}\nالسعر: **${data['price']:.2f}**\n\n⚠️ ملاحظة: لا يوجد تعويض بأي شكل (بما في ذلك تسجيل الخروج).\n\nهل تريد تأكيد الشراء؟", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_balance_"))
