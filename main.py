@@ -20,6 +20,10 @@ from telethon.sessions import StringSession
 BOT_TOKEN = "8896024185:AAFnycldDpL4OyQ4ebpgvjs1F1hJsrI-eJE"
 ADMIN_USERNAME = "aaysam"
 
+# 🔔 آيدي الأدمن الخاص بك ليصلك عليه إشعار دخول أي عضو جديد
+# ضع رقم الأيدي الخاص بك هنا (مثلاً: 123456789)
+ADMIN_USER_ID = 8863784148  # حطيت الأيدي حقك اللي ظهر بالصورة السابقة
+
 # قناة الاشتراك الإجباري
 REQUIRED_CHANNEL = "VPP8P"
 
@@ -168,7 +172,8 @@ async def toggle_lang_callback(callback: CallbackQuery):
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    user_id = message.from_user.id
+    user = message.from_user
+    user_id = user.id
     
     args = message.text.split()
     referred_by = None
@@ -195,18 +200,39 @@ async def cmd_start(message: Message, state: FSMContext):
         return
 
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    is_new_user = False
     if not cursor.fetchone():
+        is_new_user = True
         cursor.execute("INSERT INTO users (user_id, balance, referred_by, language) VALUES (?, 0.0, ?, 'ar')", (user_id, referred_by))
         if referred_by:
             cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (BONUS_AMOUNT, referred_by))
         conn.commit()
+
+        # 🔔 إرسال إشعار فوري للأدمن عند دخول مستخدم جديد لأول مرة
+        if ADMIN_USER_ID:
+            try:
+                username_str = f"@{user.username}" if user.username else "لا يوجد"
+                name_str = user.full_name or "مستخدم جديد"
+                notif_text = (
+                    f"🚨 **مستخدم جديد دخل إلى البوت!**\n\n"
+                    f"👤 **الاسم:** {name_str}\n"
+                    f"🔗 **المعرف:** {username_str}\n"
+                    f"🆔 **الإيدي:** `{user_id}`\n"
+                )
+                if referred_by:
+                    notif_text += f"🤝 **مُحال بواسطة آيدي:** `{referred_by}`\n"
+                
+                await bot.send_message(chat_id=ADMIN_USER_ID, text=notif_text, parse_mode="Markdown")
+            except Exception as e:
+                print(f"خطأ في إرسال الإشعار للأدمن: {e}")
 
     text, keyboard = get_main_keyboard(user_id)
     await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
 
 @dp.callback_query(F.data == "check_sub")
 async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
+    user = callback.from_user
+    user_id = user.id
     if await check_subscription(user_id):
         try:
             await callback.message.delete()
@@ -216,6 +242,22 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
         if not cursor.fetchone():
             cursor.execute("INSERT INTO users (user_id, balance, language) VALUES (?, 0.0, 'ar')", (user_id,))
             conn.commit()
+            
+            # إشعار للأدمن إذا اشترك ودخل بعد التحقق
+            if ADMIN_USER_ID:
+                try:
+                    username_str = f"@{user.username}" if user.username else "لا يوجد"
+                    name_str = user.full_name or "مستخدم جديد"
+                    notif_text = (
+                        f"🚨 **مستخدم جديد دخل إلى البوت (بعد الاشتراك)!**\n\n"
+                        f"👤 **الاسم:** {name_str}\n"
+                        f"🔗 **المعرف:** {username_str}\n"
+                        f"🆔 **الإيدي:** `{user_id}`\n"
+                    )
+                    await bot.send_message(chat_id=ADMIN_USER_ID, text=notif_text, parse_mode="Markdown")
+                except Exception:
+                    pass
+
         text, keyboard = get_main_keyboard(user_id)
         await callback.message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
     else:
@@ -579,11 +621,8 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         return f"❌ خطأ أثناء الاتصال بالجلسة / Connection error: {str(e)}"
 
 async def main():
-    print("جاري تشغيل البوت وتصفير أي ويب هوك قديم لضمان الاتصال المستقر...")
-    # إغلاق أي جلسات قديمة وتصفير الويب هوك بشكل نظيف تماماً لتجنب الأخطاء
+    print("جاري تشغيل البوت وتفعيل إشعارات دخول الأعضاء الجدد...")
     await bot.delete_webhook(drop_pending_updates=True)
-    
-    # بدء البوت بسلاسة مع التعامل مع الأخطاء المؤقتة للشبكة
     try:
         await dp.start_polling(
             bot, 
