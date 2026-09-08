@@ -15,8 +15,8 @@ from aiogram.fsm.context import FSMContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
-# قراءة التوكن ورابط قاعدة البيانات من متغيرات البيئة في Railway
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# تم وضع التوكن الجديد مباشرة هنا، ورابط قاعدة البيانات يُقرأ من متغيرات البيئة في Railway
+BOT_TOKEN = "8896024185:AAGdsd0J6iCt2ipEss3oYi18tPUwOKtobCI"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 ADMIN_USERNAME = "aaysam"
