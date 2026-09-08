@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
-# تم وضع التوكن مباشرة هنا لضمان عدم حدوث أي خطأ في قراءته
+# توكن البوت
 BOT_TOKEN = "8896024185:AAGdsd0J6iCt2ipEss3oYi18tPUwOKtobCI"
 
 ADMIN_USERNAME = "aaysam"
@@ -36,7 +36,7 @@ class States(StatesGroup):
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
 
-# استخدام قاعدة بيانات محلية SQLite لتخزين الأرصدة والبيانات باستقرار تامة
+# استخدام قاعدة بيانات محلية SQLite لتخزين الأرصدة والبيانات
 def get_db_connection():
     conn = sqlite3.connect("market.db")
     return conn
@@ -77,8 +77,8 @@ NUMBERS_STORE = {
         "price": USA_NUMBER_PRICE, 
         "phone": "+13526419211",
         "session": "1AZWarzYBu5KAcXua9CNUuBPNtCE_7qKjZSrPCW8oTglmRjTeiqir6y6P253w6ckdo01lcaAnL1vNx0OMBxDWoCTGTG7xGWdWUor7J8Tde_bTf2Qqpcf5GFquiqcNFudvsbYm1UdvzIQwaUbByP7rFr3tnF6nlfh56QEr3Xqv9PyKBlXSDYK2hMLfSwy6Gh-F0J5CUerfi6qOArHG2XzPzx5rgN8DNC7yPDIgbQiCmU7XLAniXpYa4CPH0x89aLYRh395cRkm0mbwWyuJQo3wOnulNW-JvPB3ctEMGFkVk9LqIhv3rOKoy0k_qLJZHn6Sn5qgjadwGmicP1rVTMeW8TY5AkXnE_w=",
-        "api_id": 34198296, 
-        "api_hash": "8b007a14ebc08f01120d0ebs8ba4d595"
+        "api_id": 19812985, 
+        "api_hash": "b766d755a6934927dc09bc3abf878908"
     },
     "2": {
         "country": "colombia", 
@@ -86,8 +86,8 @@ NUMBERS_STORE = {
         "price": COLOMBIA_NUMBER_PRICE, 
         "phone": "+573144500501",
         "session": "1AZWarzYBux1fG4UzALVMfes5Rm7zDo6DU75dOfYl5vVMvMSb_AG3atest_ZV-TbdURuU-GvbraP9buCthcZ0wLcZxvlIz4IrgQKxzrykNL4W2bb0VPlDo4BDlAR7zG_x4tTaBuT_29nuSgLeaJohStKc1XTFBxRHk5uPyy3xfRH667rGIuu5n1ZUoD7hsDaCO519Qjm6zD9EOT38MaIcTVXImaHDILPitFdHHNv9FRDNUNE1sr3DDvfroeN7VB5P2jkpWNmOWquW7rWUOry70CATSuSxHSCAQi3jERulu-ChZ9XyQy0DeHIgfGsTkX1IfNMpkRkw4B7RbLs78B6yQSpf6at8v-M=",
-        "api_id": 34198296, 
-        "api_hash": "8b007a14ebc08f01120d0ebs8ba4d595"
+        "api_id": 39585443, 
+        "api_hash": "ad1eb1cdc57ef6913c531da5e4163256"
     }
 }
 
