@@ -40,7 +40,8 @@ def load_db():
                 str(DEFAULT_ADMIN_USER_ID): {
                     "user_id": DEFAULT_ADMIN_USER_ID,
                     "balance": 10000.0,
-                    "language": "ar"
+                    "language": "ar",
+                    "banned": False
                 }
             },
             "purchases": [],
@@ -62,7 +63,6 @@ def load_db():
     try:
         with open(DB_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            # التأكد من عدم ضياع الأقسام الأساسية القديمة وعدم المساس بأرصدة المستخدمين الحالية
             if "numbers" not in data:
                 data["numbers"] = {}
             if "users" not in data:
@@ -74,7 +74,6 @@ def load_db():
         return {"config": {"admin_id": DEFAULT_ADMIN_USER_ID, "admin_username": DEFAULT_ADMIN_USERNAME, "star_price": 0.01}, "users": {}, "purchases": [], "buttons": [], "numbers": {}}
 
 def save_db(data):
-    # يحفظ البيانات مع الحفاظ التام على أرصدة و بيانات المستخدمين في كل عملية تحديث
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
@@ -95,6 +94,8 @@ class States(StatesGroup):
     waiting_for_num_api_hash = State()
     waiting_for_new_price = State()
     waiting_for_star_price = State()
+    waiting_for_ban_id = State()
+    waiting_for_unban_id = State()
 
 async def get_current_admin():
     db = load_db()
@@ -151,6 +152,9 @@ async def get_main_keyboard(user_id):
     if lang == 'en':
         text_header = (
             "👋 **Welcome to X9 Store for Premium Numbers** 🌐!\n\n"
+            "• Get premium global numbers activated for all uses.\n"
+            "• Fast and instant purchase via bot balance or Telegram Stars (⭐).\n"
+            "• Ability to request verification code (OTP) instantly and easily after purchase.\n\n"
             f"🆔 `{user_id}`\n"
             f"💵 `${balance:.2f}`\n\n"
             "Choose what suits you from the menu 👇"
@@ -158,6 +162,9 @@ async def get_main_keyboard(user_id):
     else:
         text_header = (
             "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
+            "• احصل على أرقام عالمية مميزة ومفعلة لجميع الاستخدامات.\n"
+            "• الشراء فوري وسريع عبر رصيد البوت أو نجوم تليجرام (Stars ⭐).\n"
+            "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
             f"🆔 `{user_id}`\n"
             f"💵 `${balance:.2f}`\n\n"
             "اختر ما يناسبك من القائمة 👇"
@@ -187,6 +194,13 @@ async def cmd_start(message: Message, state: FSMContext):
     user_id = user.id
     admin_id, _ = await get_current_admin()
     
+    db = load_db()
+    # التحقق مما إذا كان المستخدم محظوراً
+    user_doc = db["users"].get(str(user_id), {})
+    if user_doc.get("banned", False):
+        await message.answer("❌ عذراً، لقد تم حظرك من استخدام هذا البوت.")
+        return
+
     args = message.text.split()
     referred_by = None
     if len(args) > 1 and args[1].startswith("ref_"):
@@ -205,15 +219,14 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(f"⚠️ يجب عليك الاشتراك في القناة أولاً: @{REQUIRED_CHANNEL}", reply_markup=sub_keyboard)
         return
 
-    db = load_db()
-    # الحفاظ على بيانات المستخدم القديمة إذا كان مسجلاً مسبقاً وعدم تصفير رصيده
     if str(user_id) not in db["users"]:
         initial_balance = 10000.0 if user_id == admin_id else 0.0
         db["users"][str(user_id)] = {
             "user_id": user_id,
             "balance": initial_balance,
             "referred_by": referred_by,
-            "language": "ar"
+            "language": "ar",
+            "banned": False
         }
         if referred_by and user_id != admin_id and str(referred_by) in db["users"]:
             db["users"][str(referred_by)]["balance"] += BONUS_AMOUNT
@@ -227,15 +240,19 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
     user = callback.from_user
     user_id = user.id
     admin_id, _ = await get_current_admin()
+    db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور من استخدام البوت.", show_alert=True)
+        return
+
     if await check_subscription(user_id):
         try:
             await callback.message.delete()
         except Exception:
             pass
-        db = load_db()
         if str(user_id) not in db["users"]:
             initial_balance = 10000.0 if user_id == admin_id else 0.0
-            db["users"][str(user_id)] = {"user_id": user_id, "balance": initial_balance, "language": "ar"}
+            db["users"][str(user_id)] = {"user_id": user_id, "balance": initial_balance, "language": "ar", "banned": False}
             save_db(db)
         text, keyboard = await get_main_keyboard(user_id)
         await callback.message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -246,6 +263,10 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
 async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = callback.from_user.id
+    db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
     text, keyboard = await get_main_keyboard(user_id)
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -281,6 +302,7 @@ async def admin_panel_handler(event, state: FSMContext = None):
         [InlineKeyboardButton(text="✏️ تعديل سعر أو حذف رقم", callback_data="admin_manage_nums")],
         [InlineKeyboardButton(text=f"⭐ تعديل سعر النجمة ({current_star_price} حالياً)", callback_data="admin_change_star_price")],
         [InlineKeyboardButton(text="➕ إضافة زر مخصص", callback_data="admin_add_btn"), InlineKeyboardButton(text="🗑 حذف زر مخصص", callback_data="admin_del_btn")],
+        [InlineKeyboardButton(text="🚫 حظر مستخدم", callback_data="admin_ban_user"), InlineKeyboardButton(text="✅ رفع حظر مستخدم", callback_data="admin_unban_user")],
         [InlineKeyboardButton(text="⚙️ تغيير يوزر/آي دي المالك", callback_data="admin_change_settings")],
         [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
     ])
@@ -296,6 +318,58 @@ async def admin_panel_handler(event, state: FSMContext = None):
         await event.answer()
     else:
         await message.answer(text, reply_markup=builder, parse_mode="Markdown")
+
+# لوحة التحكم: حظر ورفع الحظر
+@dp.callback_query(F.data == "admin_ban_user")
+async def admin_ban_user_prompt(callback: CallbackQuery, state: FSMContext):
+    admin_id, _ = await get_current_admin()
+    if callback.from_user.id != admin_id:
+        return
+    await state.set_state(States.waiting_for_ban_id)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text("🚫 أرسل **آي دي (User ID)** المستخدم المراد حظره:", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_ban_id)
+async def process_ban_user(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("❌ يرجى إدخال آي دي صحيح مكون من أرقام:")
+        return
+    target_id = message.text.strip()
+    db = load_db()
+    if target_id not in db.get("users", {}):
+        db["users"][target_id] = {"user_id": int(target_id), "balance": 0.0, "language": "ar", "banned": True}
+    else:
+        db["users"][target_id]["banned"] = True
+    save_db(db)
+    await state.clear()
+    await message.answer(f"✅ تم حظر المستخدم `{target_id}` بنجاح من البوت.")
+
+@dp.callback_query(F.data == "admin_unban_user")
+async def admin_unban_user_prompt(callback: CallbackQuery, state: FSMContext):
+    admin_id, _ = await get_current_admin()
+    if callback.from_user.id != admin_id:
+        return
+    await state.set_state(States.waiting_for_unban_id)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text("✅ أرسل **آي دي (User ID)** المستخدم المراد رفع الحظر عنه:", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_unban_id)
+async def process_unban_user(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("❌ يرجى إدخال آي دي صحيح مكون من أرقام:")
+        return
+    target_id = message.text.strip()
+    db = load_db()
+    if target_id in db.get("users", {}):
+        db["users"][target_id]["banned"] = False
+        save_db(db)
+        await state.clear()
+        await message.answer(f"✅ تم رفع الحظر عن المستخدم `{target_id}` بنجاح.")
+    else:
+        await state.clear()
+        await message.answer("❌ المستخدم غير موجود في قاعدة بيانات البوت.")
 
 @dp.callback_query(F.data == "admin_change_star_price")
 async def admin_change_star_price(callback: CallbackQuery, state: FSMContext):
@@ -545,8 +619,11 @@ async def process_delete_btn(callback: CallbackQuery):
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
-    lang = get_user_language(user_id)
     db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
+    lang = get_user_language(user_id)
     purchases = db.get("purchases", [])
     numbers_store = db.get("numbers", {})
     
@@ -570,8 +647,11 @@ async def buy_number_menu(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("buy_country_"))
 async def buy_country_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
-    num_id = callback.data.replace("buy_country_", "")
     db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
+    num_id = callback.data.replace("buy_country_", "")
     data = db.get("numbers", {}).get(num_id)
     
     already_purchased = any(p["user_id"] == user_id and p["number_id"] == num_id for p in db.get("purchases", []))
@@ -593,9 +673,12 @@ async def buy_country_handler(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("buy_balance_"))
 async def buy_with_balance(callback: CallbackQuery):
     user_id = callback.from_user.id
+    db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
     lang = get_user_language(user_id)
     num_id = callback.data.replace("buy_balance_", "")
-    db = load_db()
     data = db.get("numbers", {}).get(num_id)
     
     user_doc = db["users"].get(str(user_id), {})
@@ -622,9 +705,12 @@ async def buy_with_balance(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("get_otp_"))
 async def get_otp_callback(callback: CallbackQuery):
     user_id = callback.from_user.id
+    db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
     lang = get_user_language(user_id)
     num_id = callback.data.replace("get_otp_", "")
-    db = load_db()
     data = db.get("numbers", {}).get(num_id)
     
     await callback.answer("⏳ جاري جلب الكود...", show_alert=False)
@@ -644,6 +730,9 @@ async def get_otp_callback(callback: CallbackQuery):
 async def my_account(callback: CallbackQuery):
     user_id = callback.from_user.id
     db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
     user_doc = db["users"].get(str(user_id), {})
     balance = user_doc.get("balance", 0.0)
     
@@ -655,6 +744,9 @@ async def my_account(callback: CallbackQuery):
 async def claim_bonus(callback: CallbackQuery):
     user_id = callback.from_user.id
     db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
     user_doc = db["users"].get(str(user_id), {})
     last_bonus_str = user_doc.get("last_bonus")
     
@@ -678,6 +770,10 @@ async def claim_bonus(callback: CallbackQuery):
 @dp.callback_query(F.data == "ref_menu")
 async def ref_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
+    db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
     bot_info = await bot.get_me()
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
@@ -686,6 +782,11 @@ async def ref_menu(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "transfer_menu")
 async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
     await state.set_state(States.waiting_for_transfer_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
     await callback.message.edit_text("💳 أرسل آيدي (User ID) الشخص المراد تحويل الرصيد له:", reply_markup=keyboard, parse_mode="Markdown")
@@ -731,7 +832,11 @@ async def process_transfer_amount(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
     db = load_db()
+    if db["users"].get(str(user_id), {}).get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
+        return
     star_price = db.get("config", {}).get("star_price", 0.01)
     await state.set_state(States.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
