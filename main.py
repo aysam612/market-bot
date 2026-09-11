@@ -20,7 +20,7 @@ from telethon.errors import SessionPasswordNeededError
 # 🛠️ [الإعدادات الأساسية وقاعدة البيانات الديناميكية]
 # =====================================================================
 
-BOT_TOKEN = "ضع_توكن_البوت_هنا"
+BOT_TOKEN = 8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY
 DEFAULT_ADMIN_USER_ID = 8863784148  # آي دي المشرف الخاص بك
 
 DB_FILE = "bot_database.db"
