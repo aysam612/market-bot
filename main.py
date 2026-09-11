@@ -63,8 +63,8 @@ class States(StatesGroup):
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
     
+    waiting_for_section_name = State()
     waiting_for_auto_num_id = State()
-    waiting_for_auto_num_name = State()
     waiting_for_auto_num_price = State()
     waiting_for_auto_api_combo = State()
     waiting_for_auto_phone = State()
@@ -826,20 +826,41 @@ async def proc_check_user(message: Message, state: FSMContext):
 async def admin_auto_add_num(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
-    await state.set_state(States.waiting_for_auto_num_id)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("🔢 أرسل معرف الرقم الأساسي (ID) بالإنجليزية (مثال: `usa1`):", reply_markup=back_kb)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚠️ احتياطي", callback_data="sec_احتياطي"), InlineKeyboardButton(text="🩸 نزيف", callback_data="sec_نزيف")],
+        [InlineKeyboardButton(text="⏳ إنشاء قديم", callback_data="sec_إنشاء_قديم")],
+        [InlineKeyboardButton(text="✍️ كتابة قسم مخصص", callback_data="sec_custom")],
+        [InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]
+    ])
+    
+    await callback.message.edit_text("📁 اختر تصنيف أو قسم الرقم الجديد، أو اضغط على كتابة قسم مخصص:", reply_markup=keyboard)
     await callback.answer()
+
+@dp.callback_query(F.data.startswith("sec_"))
+async def process_section_choice(callback: CallbackQuery, state: FSMContext):
+    action = callback.data.replace("sec_", "")
+    if action == "custom":
+        await state.set_state(States.waiting_for_section_name)
+        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_auto_add_num")]])
+        await callback.message.edit_text("🏷 أرسل اسم القسم الجديد (مثال: `أرقام مميزة`):", reply_markup=back_kb)
+    else:
+        section_name = action.replace("_", " ")
+        await state.update_data(num_name=section_name)
+        await state.set_state(States.waiting_for_auto_num_id)
+        await callback.message.edit_text(f"✅ تم اختيار القسم: `{section_name}`\n\n🔢 الآن أرسل معرف الرقم الأساسي (ID) بالإنجليزية (مثال: `usa1`):", parse_mode="Markdown")
+    await callback.answer()
+
+@dp.message(States.waiting_for_section_name)
+async def proc_custom_section(message: Message, state: FSMContext):
+    section_name = message.text.strip()
+    await state.update_data(num_name=section_name)
+    await state.set_state(States.waiting_for_auto_num_id)
+    await message.answer(f"✅ تم حفظ القسم: `{section_name}`\n\n🔢 الآن أرسل معرف الرقم الأساسي (ID) بالإنجليزية (مثال: `usa1`):", parse_mode="Markdown")
 
 @dp.message(States.waiting_for_auto_num_id)
 async def proc_auto_id(message: Message, state: FSMContext):
     await state.update_data(num_id=message.text.strip())
-    await state.set_state(States.waiting_for_auto_num_name)
-    await message.answer("🏷 أرسل اسم الدولة مع العلم أو القسم (مثال: `🇺🇸 أمريكا (أرقام قديمة)`):")
-
-@dp.message(States.waiting_for_auto_num_name)
-async def proc_auto_name(message: Message, state: FSMContext):
-    await state.update_data(num_name=message.text.strip())
     await state.set_state(States.waiting_for_auto_num_price)
     await message.answer("💵 أرسل السعر بالدولار (مثال: `1.50`):")
 
@@ -972,7 +993,7 @@ async def edit_number_prompt(callback: CallbackQuery, state: FSMContext):
     await state.update_data(editing_num_id=num_id)
     await state.set_state(States.waiting_for_edit_name)
     back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_manage_nums")]])
-    await callback.message.edit_text("🏷 أرسل الاسم الجديد للرقم والقسم (مثال: `🇺🇸 أمريكا (أرقام قديمة)`):", reply_markup=back_kb)
+    await callback.message.edit_text("🏷 أرسل الاسم الجديد للرقم والقسم (مثال: `⚠️ احتياطي`):", reply_markup=back_kb)
     await callback.answer()
 
 @dp.message(States.waiting_for_edit_name)
