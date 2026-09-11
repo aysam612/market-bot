@@ -1,4 +1,4 @@
-Import os
+import os
 import re
 import asyncio
 from datetime import datetime, timedelta
@@ -1104,35 +1104,45 @@ async def fetch_otp_async(session_str: str, api_id: int, api_hash: str) -> str:
                 otp_match = re.search(r'\b\d{5,6}\b', msg.text)
                 if otp_match:
                     return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\n*(اضغط على زر التحديث في الأسفل إذا لم يصلك كود جديد بعد)*"
-        return "⏳ لم يصل كود تفعيل جديد بعد. اضغط على زر التحديث أدناه لجلب الكود فور وصوله."
+        return "⏳ لم يصل كود تفعيل جديد بعد."
     except Exception as e:
-        return f"⚠️ حدث خطأ أثناء جلب الكود: `{str(e)}`"
+        return f"❌ حدث خطأ أثناء جلب الكود:\n`{str(e)}`"
 
 @dp.callback_query(F.data.startswith("get_otp_"))
-async def refresh_otp_callback(callback: CallbackQuery):
-    num_id = callback.data.replace("get_otp_", "")
+async def refresh_otp_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
+    num_id = callback.data.replace("get_otp_", "")
     
     purchase = next((p for p in MEMORY_PURCHASES if p["user_id"] == user_id and p["number_id"] == num_id), None)
     if not purchase:
-        await callback.answer("❌ عذراً، لا يمكنك الوصول لهذا الرقم.", show_alert=True)
+        await callback.answer("❌ لم يتم العثور على تفاصيل هذا الرقم في سجلك.", show_alert=True)
         return
         
     data = purchase["num_data"]
+    await callback.answer("🔄 جاري فحص رسائل تليجرام لجلب الكود الجديد...")
+    
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
+        [InlineKeyboardButton(text="🔄 تحديث الكود (OTP)", callback_data=f"get_otp_{num_id}")],
+        [InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")]
     ])
     try:
-        await callback.message.edit_text(f"🎉 **تفاصيل الرقم:**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(f"📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود المحدث:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
     except Exception:
         pass
-    await callback.answer("✅ تم تحديث حالة الكود.")
+
+# =====================================================================
+# 🚀 [تشغيل البوت الأساسي]
+# =====================================================================
 
 async def main():
-    print("🤖 البوت يعمل الآن بنجاح...")
+    print("🤖 البوت يعمل الآن بكفاءة...")
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("⚠️ تم إيقاف البوت بنجاح.")
