@@ -39,7 +39,7 @@ CUSTOM_BUTTONS = [
 
 CONFIG_DATA = {
     "star_price": 0.01,
-    "ton_price": 1.35, # سعر عملة التون بالدولار تقريباً
+    "ton_price": 1.35,
     "payment_methods": ["Telegram Stars ⭐", "TON 💎"]
 }
 
@@ -1101,7 +1101,9 @@ async def fetch_otp_async(session_str: str, api_id: int, api_hash: str) -> str:
             if msg.text:
                 otp_match = re.search(r'\b\d{5,6}\b', msg.text)
                 if otp_match:
-                    return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\nملاحظة : اضغط على زر طلب (الكود أعلاه لتحديثه لحظياً)"
+                    return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\nملاحظة : اضغط على زر طلب الكود أعلاه لتحديثه لحظياً"
         return "⏳ لم يصل كود تفعيل جديد بعد. اضغط على زر التحديث."
     except Exception as e:
-        return f"❌ خطأ في جلب الكود: `{str
+        return f"❌ خطأ في جلب الكود: `{str(e)}`"
+
+@dp.callback_query(F.data.st
