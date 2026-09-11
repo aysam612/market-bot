@@ -262,7 +262,6 @@ async def admin_panel_handler(event, state: FSMContext = None):
     else:
         await message.answer(text, reply_markup=builder, parse_mode="Markdown")
 
-# إدارة الأزرار الإضافية (إضافة/حذف)
 @dp.callback_query(F.data == "admin_manage_buttons")
 async def admin_manage_buttons(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
@@ -765,7 +764,6 @@ async def proc_auto_price(message: Message, state: FSMContext):
         return
     await state.update_data(num_price=price)
     
-    # إدخال API ID و API Hash دفعة واحدة بالشكل المطلوب
     await state.set_state(States.waiting_for_auto_api_combo)
     await message.answer("🔑 أرسل **API_ID** و **API_HASH** معاً مفصولين بنقطتين (مثال:\n`39585443:ad1eb1cdc57ef6913c531da5e4163256`):")
 
@@ -773,7 +771,7 @@ async def proc_auto_price(message: Message, state: FSMContext):
 async def proc_auto_api_combo(message: Message, state: FSMContext):
     text = message.text.strip()
     if ":" not in text:
-        await message.answer("❌ الصيغة غير صحيحة. يجيب أن تكون بالشكل:\n`API_ID:API_HASH`\nأعد الإرسال:")
+        await message.answer("❌ الصيغة غير صحيحة. يجب أن تكون بالشكل:\n`API_ID:API_HASH`\nأعد الإرسال:")
         return
     parts = text.split(":", 1)
     try:
@@ -806,7 +804,8 @@ async def proc_auto_phone(message: Message, state: FSMContext):
 
 @dp.message(States.waiting_for_auto_code)
 async def proc_auto_code(message: Message, state: FSMContext):
-    code = message.text.strip()
+    # تنظيف الكود وإزالة أي مسافات أو رموز غير مرغوب فيها
+    code = re.sub(r'\D', '', message.text.strip())
     data = await state.get_data()
     try:
         client = TelegramClient(StringSession(data["client_session"]), data["api_id"], data["api_hash"])
@@ -829,8 +828,7 @@ async def proc_auto_code(message: Message, state: FSMContext):
         await state.set_state(States.waiting_for_auto_password)
         await message.answer("🔐 الحساب محمي بكلمة مرور (تحقق بخطوتين)، أرسلها الآن:")
     except Exception as e:
-        await state.clear()
-        await message.answer(f"❌ حدث خطأ: `{str(e)}`")
+        await message.answer(f"❌ الكود غير صحيح أو حدث خطأ: `{str(e)}`\n\nأعد إرسال الكود الصحيح:")
 
 @dp.message(States.waiting_for_auto_password)
 async def proc_auto_password(message: Message, state: FSMContext):
@@ -925,80 +923,6 @@ async def buy_country_handler(callback: CallbackQuery):
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_balance_"))
-async def buy_with_balance(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    num_id = callback.data.replace("buy_balance_", "")
-    
-    # البحث عن الرقم وإزالته فوراً حتى لا يشتريه شخص آخر
-    global MEMORY_NUMBERS
-    data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
-    if not data:
-        await callback.answer("❌ عذراً، لقد سبك شخص آخر في شراء هذا الرقم!", show_alert=True)
-        return
-
-    balance = MEMORY_USERS.get(user_id, {}).get("balance", 0.0)
-    if balance < data['price']:
-        await callback.answer("❌ رصيدك غير كافي!", show_alert=True)
-        return
-        
-    # اقتطاع الرصيد وحذف الرقم من القائمة العامة وإضافته للمشتريات
-    MEMORY_USERS[user_id]["balance"] -= data['price']
-    MEMORY_NUMBERS = [n for n in MEMORY_NUMBERS if n["num_id"] != num_id]
-    MEMORY_PURCHASES.append({"user_id": user_id, "number_id": num_id})
-    
-    otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
-    
-    # إزالة زر القائمة الرئيسية تماماً من شاشة الشراء كما طلبت
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
-    ])
-    await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
-
-@dp.callback_query(F.data.startswith("get_otp_"))
-async def get_otp_callback(callback: CallbackQuery):
-    num_id = callback.data.replace("get_otp_", "")
-    
-    # البحث في الأرقام المباعة أو الذاكرة المؤقتة لجلب الجلسة
-    # بما أن الرقم تم حذفه من MEMORY_NUMBERS، سنبحث في بيانات المشتريات أو نحتفظ بنسخة مؤقتة للمشتري
-    # سنعدل آلية حفظ الرقم للمستخدم المشتري لضمان عمل زر طلب الكود دائمًا:
-    # (تم تعديل الكود ليكون آمناً ويعمل بكفاءة)
-    
-    # سنبحث عنه في سجلات الأرقام المؤقتة (سنبحث في المشتريات لنعرف الجلسة)
-    # لحل هذه النقطة ببساطة، سنقوم بتخزين الأرقام المباعة مع تفاصيلها في قائمة خاصة للمستخدم أو بقاؤها برابط مخصص
-    purchased_item = next((p for p in MEMORY_PURCHASES if p["number_id"] == num_id and p["user_id"] == callback.from_user.id), None)
-    
-    # للتبسيط وضمان جلب الكود، سنحتفظ ببيانات الجلسة في الكائن مباشرة:
-    # (تم دمج تخزين الرقم المشتري أدناه)
-    pass
-
-# تصحيح دالة جلب الكود المشتري لتعمل بسلاسة تامة وتتحدث لحظياً:
-@dp.callback_query(F.data.startswith("get_otp_"))
-async def get_otp_callback_fixed(callback: CallbackQuery):
-    num_id = callback.data.replace("get_otp_", "")
-    
-    # سنبحث عن الرقم في بيانات الأرقام المشتراة أو المؤقتة
-    target_num = None
-    for p in MEMORY_PURCHASES:
-        if p["number_id"] == num_id and p["user_id"] == callback.from_user.id:
-            target_num = p.get("num_data")
-            break
-            
-    if not target_num:
-        await callback.answer("❌ عذراً، بيانات هذا الرقم غير موجودة.", show_alert=True)
-        return
-
-    otp_text = await fetch_otp_async(target_num["session"], target_num["api_id"], target_num["api_hash"])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
-    ])
-    try:
-        await callback.message.edit_text(f"📱 **الرقم:** `{target_num['phone']}`\n\n📥 **حالة الكود المحدثة:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
-    except Exception:
-        pass
-    await callback.answer("🔄 تم تحديث الكود بنجاح!")
-
-# تحديث دالة الشراء لتخزين بيانات الرقم مع المشتري ليتمكن من طلب الكود دائمًا:
-@dp.callback_query(F.data.startswith("buy_balance_"))
 async def buy_with_balance_fixed(callback: CallbackQuery):
     user_id = callback.from_user.id
     num_id = callback.data.replace("buy_balance_", "")
@@ -1017,18 +941,39 @@ async def buy_with_balance_fixed(callback: CallbackQuery):
     MEMORY_USERS[user_id]["balance"] -= data['price']
     MEMORY_NUMBERS = [n for n in MEMORY_NUMBERS if n["num_id"] != num_id]
     
-    # تخزين الرقم مع بياناته الخاصة بالمشتري
     MEMORY_PURCHASES.append({"user_id": user_id, "number_id": num_id, "num_data": data})
     
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
-    # زر طلب كود فقط بدون زر القائمة الرئيسية
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
     ])
     await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
 
-# دالة جلب الكود الأحدث (تبحث في رسائل آخر 3 دقائق فقط لتجنب جلب الأكواد القديمة)
+@dp.callback_query(F.data.startswith("get_otp_"))
+async def get_otp_callback_fixed(callback: CallbackQuery):
+    num_id = callback.data.replace("get_otp_", "")
+    
+    target_num = None
+    for p in MEMORY_PURCHASES:
+        if p["number_id"] == num_id and p["user_id"] == callback.from_user.id:
+            target_num = p.get("num_data")
+            break
+            
+    if not target_num:
+        await callback.answer("❌ عذراً، بيانات هذا الرقم غير موجودة.", show_alert=True)
+        return
+
+    otp_text = await fetch_otp_async(target_num["session"], target_num["api_id"], target_num["api_hash"])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
+    ])
+    try:
+        await callback.message.edit_text(f"📱 **الرقم:** `{target_num['phone']}`\n\n📥 **حالة الكود المحدثة:**\n{otp_text}", reply_markup=keyboard, parse_Mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer("🔄 تم تحديث الكود بنجاح!")
+
 async def fetch_otp_async(session_str, api_id, api_hash):
     try:
         client = TelegramClient(StringSession(session_str), api_id, api_hash)
@@ -1036,10 +981,8 @@ async def fetch_otp_async(session_str, api_id, api_hash):
         messages = await client.get_messages(777000, limit=5)
         await client.disconnect()
         
-        current_time = datetime.now()
         for msg in messages:
             if msg.text:
-                # التحقق أن الرسالة حديثة (وصلت خلال آخر 3 دقائق مثلاً) أو أحدث رسالة تحتوي على كود
                 otp_match = re.search(r'\b\d{5,6}\b', msg.text)
                 if otp_match:
                     return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\n*(ملاحظة: اضغط على زر طلب الكود أعلاه لتحديثه لحظياً)*"
