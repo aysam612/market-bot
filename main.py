@@ -857,7 +857,7 @@ async def process_section_choice(callback: CallbackQuery, state: FSMContext):
     back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_auto_add_num")]])
     await callback.message.edit_text(
         f"✅ تم اختيار القسم: `{section_name}`\n\n"
-        "✍️ **الآن اكتب تفاصيل الرقم/الدولة كما تريد أن تظهر للبط (مثال: `هندي انشاء 2022 🇮🇳`):**", 
+        "✍️ **الآن اكتب تفاصيل الرقم/الدولة كما تريد أن تظهر للمستخدم (مثال: `هندي انشاء 2022 🇮🇳`):**", 
         reply_markup=back_kb, 
         parse_mode="Markdown"
     )
@@ -1105,7 +1105,7 @@ async def view_section_numbers(callback: CallbackQuery):
 
     buttons = []
     for num in matched_nums:
-        details = num.get("country", "رقم مميز") # هنا يظهر الوصف الذي كتبته أنت مثل "هندي انشاء 2022 🇮🇳"
+        details = num.get("country", "رقم مميز")
         price = num["price"]
         buttons.append([
             InlineKeyboardButton(
@@ -1197,7 +1197,8 @@ async def refresh_otp_handler(callback: CallbackQuery):
     
     purchase = next((p for p in MEMORY_PURCHASES if p["user_id"] == user_id and p["number_id"] == num_id), None)
     if not purchase:
-        await callback.answer("❌ لم يتم العثور على تفاصيل هذا الرقم في سجلك.", show_alert=Test if 'Test' in globals() else True, show_alert=True)
+        # تمت معالجة المشكلة هنا وتصحيح التنبيه بنجاح بدون أي تكرار
+        await callback.answer("❌ لم يتم العثور على تفاصيل هذا الرقم في سجلك.", show_alert=True)
         return
         
     data = purchase["num_data"]
