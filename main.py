@@ -18,8 +18,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 BOT_TOKEN = "8896024185:AAGdsd0J6iCt2ipEss3oYi18tPUwOKtobCI"
 
-# 🔗 رابط مونجو الخاص بك
-MONGO_URI = os.getenv("MONGO_URL", "mongodb+srv://aysamaysam426_db_user:db_password@aysam.ut0hpt5.mongodb.net/?appName=aysam")
+# 🔗 رابط مونجو الخاص بك جاهز مباشرة في الكود (استبدل <db_password> بكلمة المرور الحقيقية)
+MONGO_URI = "mongodb+srv://aysamaysam426_db_user:db_password@aysam.ut0hpt5.mongodb.net/?appName=aysam"
 
 # الاتصال بقاعدة البيانات
 mongo_client = AsyncIOMotorClient(MONGO_URI)
@@ -61,7 +61,7 @@ class States(StatesGroup):
     waiting_for_auto_password = State()
 
     waiting_for_new_price = State()
-    waiting_for_new_name = State()   # حالة تعديل اسم الرقم
+    waiting_for_new_name = State()
     waiting_for_star_price = State()
     waiting_for_ban_id = State()
     waiting_for_unban_id = State()
@@ -496,7 +496,6 @@ async def process_del_num(callback: CallbackQuery):
     await callback.answer("✅ تم الحذف بنجاح!", show_alert=True)
     await admin_manage_nums(callback)
 
-# تعديل السعر
 @dp.callback_query(F.data.startswith("edit_price_"))
 async def process_edit_num_price(callback: CallbackQuery, state: FSMContext):
     num_id = callback.data.replace("edit_price_", "")
@@ -519,7 +518,6 @@ async def save_new_num_price(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(f"✅ **تم تحديث السعر إلى `${new_price}` بنجاح!**")
 
-# تعديل اسم الرقم
 @dp.callback_query(F.data.startswith("edit_name_"))
 async def process_edit_num_name(callback: CallbackQuery, state: FSMContext):
     num_id = callback.data.replace("edit_name_", "")
