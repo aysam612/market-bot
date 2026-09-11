@@ -1090,20 +1090,18 @@ async def buy_with_balance_fixed(callback: CallbackQuery):
     ])
     await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
 
-@dp.callback_query(F.data.startswith("get_otp_"))
-async def get_otp_callback_fixed(callback: CallbackQuery):
-    num_id = callback.data.replace("get_otp_", "")
-    
-    target_num = None
-    for p in MEMORY_PURCHASES:
-        if p["number_id"] == num_id and p["user_id"] == callback.from_user.id:
-            target_num = p.get("num_data")
-            break
-            
-    if not target_num:
-        await callback.answer("❌ عذراً، بيانات هذا الرقم غير موجودة.", show_alert=True)
-        return
-
-    otp_temp_text = await fetch_otp_async(target_num["session"], target_num["api_id"], target_num["api_hash"])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callb
+async def fetch_otp_async(session_str: str, api_id: int, api_hash: str) -> str:
+    try:
+        client = TelegramClient(StringSession(session_str), api_id, api_hash)
+        await client.connect()
+        messages = await client.get_messages(777000, limit=5)
+        await client.disconnect()
+        
+        for msg in messages:
+            if msg.text:
+                otp_match = re.search(r'\b\d{5,6}\b', msg.text)
+                if otp_match:
+                    return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\nملاحظة : اضغط على زر طلب (الكود أعلاه لتحديثه لحظياً)"
+        return "⏳ لم يصل كود تفعيل جديد بعد. اضغط على زر التحديث."
+    except Exception as e:
+        return f"❌ خطأ في جلب الكود: `{str
