@@ -22,25 +22,26 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 BOT_TOKEN = "8674271181:AAH0RGu9L6JLWYQQfca1cfpwYbEsE-echHY"
 TON_WALLET_ADDRESS = "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU"
 
-DEFAULT_ADMIN_USERNAME = "aaysam"
-DEFAULT_ADMIN_USER_ID = 8863784148
+DEFAULT_ADMIN_USERNAME = "i_kwi""
+DEFAULT_ADMIN_USER_ID = 8219788822
 
-REQUIRED_CHANNEL = "VPP8P"
+REQUIRED_CHANNEL = "VPP0P"
 BONUS_AMOUNT = 0.01
 
 TEXTS = {
-    "support_username": "aaysam"
+    "support_username"i_kwi"
+}"
 }
 
 CUSTOM_BUTTONS = [
-    {"name": "💬 قناة التليجرام", "url": "https://t.me/VPP8P"},
-    {"name": "🔥 جروب الدعم", "url": "https://t.me/aaysam"}
+    {"name": "💬 قناة التليجرام", "url": "https://t.me/VPP0P"},
+    {"name": "🔥 جروب الدعم", "url": "https://t.me/i_kwi"}
 ]
 
 CONFIG_DATA = {
     "star_price": 0.01,
     "ton_price": 1.35,
-    "payment_methods": ["Telegram Stars ⭐", "TON 💎"]
+    "payment_methods": ["Telegram Stars ⭐"]
 }
 
 # الأقسام الرئيسية المتاحة في المتجر
