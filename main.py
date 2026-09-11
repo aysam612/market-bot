@@ -43,6 +43,14 @@ CONFIG_DATA = {
     "payment_methods": ["Telegram Stars ⭐", "TON 💎"]
 }
 
+# الأقسام الرئيسية المتاحة في المتجر
+MAIN_SECTIONS = [
+    "شراء حساب جاهز",
+    "إنشاء قديم",
+    "احتيالي",
+    "أرقام تليجرام عادية"
+]
+
 # =====================================================================
 # 🚀 [تهيئة البوت والحالات]
 # =====================================================================
@@ -63,7 +71,7 @@ class States(StatesGroup):
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
     
-    waiting_for_section_name = State()
+    waiting_for_country = State()
     waiting_for_auto_num_id = State()
     waiting_for_auto_num_price = State()
     waiting_for_auto_api_combo = State()
@@ -480,7 +488,7 @@ async def process_transfer_amount(message: Message, state: FSMContext):
         pass
 
 # =====================================================================
-# 💳 [نظام الشحن وطرق الدفع: النجوم و TON]
+# 💳 [نظام الشحن وطرق الدفع]
 # =====================================================================
 
 @dp.callback_query(F.data == "recharge_menu")
@@ -822,41 +830,45 @@ async def proc_check_user(message: Message, state: FSMContext):
     )
     await message.answer(text, parse_mode="Markdown")
 
+# =====================================================================
+# 📱 [خطوات إضافة الرقم وتحديد القسم والتفاصيل]
+# =====================================================================
+
 @dp.callback_query(F.data == "admin_auto_add_num")
 async def admin_auto_add_num(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚠️ احتياطي", callback_data="sec_احتياطي"), InlineKeyboardButton(text="🩸 نزيف", callback_data="sec_نزيف")],
-        [InlineKeyboardButton(text="⏳ إنشاء قديم", callback_data="sec_إنشاء_قديم")],
-        [InlineKeyboardButton(text="✍️ كتابة قسم مخصص", callback_data="sec_custom")],
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]
-    ])
+    # عرض الأقسام المحددة للاختيار
+    keyboard_buttons = []
+    for sec in MAIN_SECTIONS:
+        keyboard_buttons.append([InlineKeyboardButton(text=f"📁 {sec}", callback_data=f"sec_{sec}")])
+    keyboard_buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
     
-    await callback.message.edit_text("📁 اختر تصنيف أو قسم الرقم الجديد، أو اضغط على كتابة قسم مخصص:", reply_markup=keyboard)
+    await callback.message.edit_text("📁 اختر القسم المناسب لإضافة الرقم إليه:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons))
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("sec_"))
 async def process_section_choice(callback: CallbackQuery, state: FSMContext):
-    action = callback.data.replace("sec_", "")
-    if action == "custom":
-        await state.set_state(States.waiting_for_section_name)
-        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_auto_add_num")]])
-        await callback.message.edit_text("🏷 أرسل اسم القسم الجديد (مثال: `أرقام مميزة`):", reply_markup=back_kb)
-    else:
-        section_name = action.replace("_", " ")
-        await state.update_data(num_name=section_name)
-        await state.set_state(States.waiting_for_auto_num_id)
-        await callback.message.edit_text(f"✅ تم اختيار القسم: `{section_name}`\n\n🔢 الآن أرسل معرف الرقم الأساسي (ID) بالإنجليزية (مثال: `usa1`):", parse_mode="Markdown")
+    section_name = callback.data.replace("sec_", "")
+    await state.update_data(num_section=section_name)
+    await state.set_state(States.waiting_for_country)
+    
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_auto_add_num")]])
+    await callback.message.edit_text(
+        f"✅ تم اختيار القسم: `{section_name}`\n\n"
+        "✍️ **الآن اكتب تفاصيل الرقم/الدولة كما تريد أن تظهر للبط (مثال: `هندي انشاء 2022 🇮🇳`):**", 
+        reply_markup=back_kb, 
+        parse_mode="Markdown"
+    )
     await callback.answer()
 
-@dp.message(States.waiting_for_section_name)
-async def proc_custom_section(message: Message, state: FSMContext):
-    section_name = message.text.strip()
-    await state.update_data(num_name=section_name)
+@dp.message(States.waiting_for_country)
+async def proc_country(message: Message, state: FSMContext):
+    country_details = message.text.strip()
+    await state.update_data(country=country_details)
     await state.set_state(States.waiting_for_auto_num_id)
-    await message.answer(f"✅ تم حفظ القسم: `{section_name}`\n\n🔢 الآن أرسل معرف الرقم الأساسي (ID) بالإنجليزية (مثال: `usa1`):", parse_mode="Markdown")
+    await message.answer(f"✅ التفاصيل: `{country_details}`\n\n🔢 الآن أرسل معرف الرقم الأساسي (ID) بالإنجليزية (مثال: `num1`):", parse_mode="Markdown")
 
 @dp.message(States.waiting_for_auto_num_id)
 async def proc_auto_id(message: Message, state: FSMContext):
@@ -887,7 +899,7 @@ async def proc_auto_api_combo(message: Message, state: FSMContext):
         api_id = int(parts[0].strip())
         api_hash = parts[1].strip()
     except ValueError:
-        await message.answer("❌ تأكد من صحة الأرقام، أعد المحاولة:")
+        await message.answer("❌ تأكد من صحة البيانات، أعد المحاولة:")
         return
 
     await state.update_data(api_id=api_id, api_hash=api_hash)
@@ -928,12 +940,12 @@ async def proc_auto_code(message: Message, state: FSMContext):
         global MEMORY_NUMBERS
         MEMORY_NUMBERS = [n for n in MEMORY_NUMBERS if n["num_id"] != num_id]
         MEMORY_NUMBERS.append({
-            "num_id": num_id, "country": "auto", "name": data["num_name"],
+            "num_id": num_id, "section": data["num_section"], "country": data["country"],
             "price": data["num_price"], "phone": data["phone"],
             "session": final_session, "api_id": data["api_id"], "api_hash": data["api_hash"]
         })
         await state.clear()
-        await message.answer("✅ تم إضافة الرقم وتفعليه بنجاح!")
+        await message.answer("✅ تم إضافة الرقم وتفعليه بنجاح ضمن القسم والتفاصيل المحددة!")
     except SessionPasswordNeededError:
         await state.set_state(States.waiting_for_auto_password)
         await message.answer("🔐 الحساب محمي بكلمة مرور (تحقق بخطوتين)، أرسلها الآن:")
@@ -955,12 +967,12 @@ async def proc_auto_password(message: Message, state: FSMContext):
         global MEMORY_NUMBERS
         MEMORY_NUMBERS = [n for n in MEMORY_NUMBERS if n["num_id"] != num_id]
         MEMORY_NUMBERS.append({
-            "num_id": num_id, "country": "auto", "name": data["num_name"],
+            "num_id": num_id, "section": data["num_section"], "country": data["country"],
             "price": data["num_price"], "phone": data["phone"],
             "session": final_session, "api_id": data["api_id"], "api_hash": data["api_hash"]
         })
         await state.clear()
-        await message.answer("✅ تم تفعيل الرقم بنجاح!")
+        await message.answer("✅ تم تفعيل الرقم وحفظه بنجاح!")
     except Exception as e:
         await state.clear()
         await message.answer(f"❌ خطأ: `{str(e)}`")
@@ -977,12 +989,14 @@ async def admin_manage_nums_handler(callback: CallbackQuery):
 
     buttons = []
     for num in MEMORY_NUMBERS:
+        sec = num.get('section', '')
+        cntry = num.get('country', '')
         buttons.append([
-            InlineKeyboardButton(text=f"🗑 {num['name']} ({num['phone']})", callback_data=f"del_num_{num['num_id']}"),
+            InlineKeyboardButton(text=f"🗑 [{sec}] {cntry}", callback_data=f"del_num_{num['num_id']}"),
             InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num['num_id']}")
         ])
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
-    await callback.message.edit_text("⚙️ **إدارة الأرقام (حذف أو تعديل الاسم والسعر):**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("⚙️ **إدارة الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("edit_num_"))
@@ -993,12 +1007,12 @@ async def edit_number_prompt(callback: CallbackQuery, state: FSMContext):
     await state.update_data(editing_num_id=num_id)
     await state.set_state(States.waiting_for_edit_name)
     back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_manage_nums")]])
-    await callback.message.edit_text("🏷 أرسل الاسم الجديد للرقم والقسم (مثال: `⚠️ احتياطي`):", reply_markup=back_kb)
+    await callback.message.edit_text("✍️ أرسل التفاصيل الجديدة (مثال: `هندي انشاء 2022 🇮🇳`):", reply_markup=back_kb)
     await callback.answer()
 
 @dp.message(States.waiting_for_edit_name)
 async def proc_edit_name(message: Message, state: FSMContext):
-    await state.update_data(new_name=message.text.strip())
+    await state.update_data(new_country=message.text.strip())
     await state.set_state(States.waiting_for_edit_price)
     await message.answer("💵 أرسل السعر الجديد بالدولار (مثال: `2.00`):")
 
@@ -1012,17 +1026,17 @@ async def proc_edit_price(message: Message, state: FSMContext):
     
     data = await state.get_data()
     num_id = data["editing_num_id"]
-    new_name = data["new_name"]
+    new_country = data["new_country"]
     
     global MEMORY_NUMBERS
     for num in MEMORY_NUMBERS:
         if num["num_id"] == num_id:
-            num["name"] = new_name
+            num["country"] = new_country
             num["price"] = new_price
             break
             
     await state.clear()
-    await message.answer("✅ تم تعديل اسم وسعر الرقم بنجاح!")
+    await message.answer("✅ تم تعديل بيانات الرقم بنجاح!")
 
 @dp.callback_query(F.data.startswith("del_num_"))
 async def delete_number_handler(callback: CallbackQuery):
@@ -1041,11 +1055,15 @@ async def delete_number_handler(callback: CallbackQuery):
     buttons = []
     for num in MEMORY_NUMBERS:
         buttons.append([
-            InlineKeyboardButton(text=f"🗑 {num['name']} ({num['phone']})", callback_data=f"del_num_{num['num_id']}"),
+            InlineKeyboardButton(text=f"🗑 {num.get('section','')} | {num.get('country','')}", callback_data=f"del_num_{num['num_id']}"),
             InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num['num_id']}")
         ])
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
-    await callback.message.edit_text("⚙️ **إدارة الأرقام (حذف أو تعديل الاسم والسعر):**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("⚙️ **إدارة الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+# =====================================================================
+# 🛒 [عرض الأقسام غير الفارغة فقط للمستخدمين]
+# =====================================================================
 
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
@@ -1055,40 +1073,82 @@ async def buy_number_menu(callback: CallbackQuery):
         await callback.answer()
         return
 
-    grouped_numbers = {}
+    # فحص الأقسام التي تحتوي على أرقام فقط (التي ليس فيها أرقام يتم إخفاؤها تلقائياً)
+    active_sections = {}
     for num in MEMORY_NUMBERS:
-        key = (num['name'], num['price'])
-        if key not in grouped_numbers:
-            grouped_numbers[key] = []
-        grouped_numbers[key].append(num['num_id'])
+        sec = num.get("section")
+        if sec:
+            active_sections[sec] = active_sections.get(sec, 0) + 1
+
+    if not active_sections:
+        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
+        await callback.message.edit_text("📭 عذراً، لا توجد أقسام تحتوي على أرقام حالياً.", reply_markup=back_kb)
+        await callback.answer()
+        return
 
     buttons = []
-    for (name, price), ids in grouped_numbers.items():
-        count = len(ids)
-        buttons.append([InlineKeyboardButton(text=f"{name} - ${price:.2f} (متاح: {count})", callback_data=f"buy_group_{ids[0]}")])
+    for sec, count in active_sections.items():
+        buttons.append([InlineKeyboardButton(text=f"📁 {sec} (متاح: {count})", callback_data=f"view_sec_{sec}")])
         
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")])
-    await callback.message.edit_text("🛒 اختر القسم أو الرقم المناسب للشراء:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("🛒 **اختر القسم المطلوب لتصفح الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("buy_group_"))
-async def buy_group_handler(callback: CallbackQuery):
-    num_id = callback.data.replace("buy_group_", "")
+@dp.callback_query(F.data.startswith("view_sec_"))
+async def view_section_numbers(callback: CallbackQuery):
+    sec_name = callback.data.replace("view_sec_", "")
+    matched_nums = [n for n in MEMORY_NUMBERS if n.get("section") == sec_name]
+    
+    if not matched_nums:
+        await callback.answer("❌ لا توجد أرقام في هذا القسم حالياً.", show_alert=True)
+        return
+
+    buttons = []
+    for num in matched_nums:
+        details = num.get("country", "رقم مميز") # هنا يظهر الوصف الذي كتبته أنت مثل "هندي انشاء 2022 🇮🇳"
+        price = num["price"]
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{details} | 💵 ${price:.2f}", 
+                callback_data=f"buy_num_{num['num_id']}"
+            )
+        ])
+        
+    buttons.append([InlineKeyboardButton(text="🔙 رجوع للأقسام", callback_data="buy_number_menu")])
+    await callback.message.edit_text(f"📁 **الأرقام المتوفرة في قسم ({sec_name}):**\nاختر الرقم المناسب لعرض التفاصيل والشراء:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("buy_num_"))
+async def buy_number_details(callback: CallbackQuery):
+    num_id = callback.data.replace("buy_num_", "")
     data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
     if not data:
         await callback.answer("❌ هذا الرقم غير متوفر حالياً.", show_alert=True)
         return
+        
+    sec = data.get("section", "")
+    details = data.get("country", "")
+    price = data["price"]
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"تأكيد الشراء مقابل ${data['price']:.2f}", callback_data=f"buy_balance_{num_id}")],
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]
+        [InlineKeyboardButton(text=f"💳 تأكيد الشراء مقابل ${price:.2f}", callback_data=f"confirm_buy_{num_id}")],
+        [InlineKeyboardButton(text="🔙 رجوع للقسم", callback_data=f"view_sec_{sec}")]
     ])
-    await callback.message.edit_text(f"القسم/النوع: {data['name']}\nالسعر: **${data['price']:.2f}**\n\nهل تريد تأكيد الشراء؟", reply_markup=keyboard, parse_mode="Markdown")
+    
+    text = (
+        f"📋 **تفاصيل الرقم المطلوب:**\n\n"
+        f"📁 القسم: `{sec}`\n"
+        f"📌 الوصف: `{details}`\n"
+        f"💵 السعر: **${price:.2f}**\n\n"
+        "هل تريد إتمام عملية الشراء فوراً؟"
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("buy_balance_"))
-async def buy_with_balance_fixed(callback: CallbackQuery):
+@dp.callback_query(F.data.startswith("confirm_buy_"))
+async def confirm_buy_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
-    num_id = callback.data.replace("buy_balance_", "")
+    num_id = callback.data.replace("confirm_buy_", "")
     
     global MEMORY_NUMBERS
     data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
@@ -1098,7 +1158,7 @@ async def buy_with_balance_fixed(callback: CallbackQuery):
 
     balance = MEMORY_USERS.get(user_id, {}).get("balance", 0.0)
     if balance < data['price']:
-        await callback.answer("❌ رصيدك غير كافي!", show_alert=True)
+        await callback.answer("❌ رصيدك غير كافي لشراء هذا الرقم!", show_alert=True)
         return
         
     MEMORY_USERS[user_id]["balance"] -= data['price']
@@ -1109,9 +1169,10 @@ async def buy_with_balance_fixed(callback: CallbackQuery):
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
+        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")],
+        [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
     ])
-    await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n📌 **التفاصيل:** `{data.get('country','')}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
 
 async def fetch_otp_async(session_str: str, api_id: int, api_hash: str) -> str:
     try:
@@ -1136,7 +1197,7 @@ async def refresh_otp_handler(callback: CallbackQuery):
     
     purchase = next((p for p in MEMORY_PURCHASES if p["user_id"] == user_id and p["number_id"] == num_id), None)
     if not purchase:
-        await callback.answer("❌ لم يتم العثور على تفاصيل هذا الرقم في سجلك.", show_alert=True)
+        await callback.answer("❌ لم يتم العثور على تفاصيل هذا الرقم في سجلك.", show_alert=Test if 'Test' in globals() else True, show_alert=True)
         return
         
     data = purchase["num_data"]
