@@ -21,8 +21,8 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 
-DEFAULT_API_ID = 1234567       # استبدلها برقم الـ API ID الخاص بك من my.telegram.org
-DEFAULT_API_HASH = "your_api_hash_here"  # استبدلها بالـ API Hash الخاص بك
+DEFAULT_API_ID = 1234567       # سيطلبها البوت منك في المحادثة إذا تركتها وهمية
+DEFAULT_API_HASH = "your_api_hash_here"
 
 DEFAULT_ADMIN_USERNAME = "aaysam"
 DEFAULT_ADMIN_USER_ID = 8863784148
@@ -66,6 +66,8 @@ class States(StatesGroup):
     waiting_for_auto_num_id = State()
     waiting_for_auto_num_name = State()
     waiting_for_auto_num_price = State()
+    waiting_for_auto_api_id = State()
+    waiting_for_auto_api_hash = State()
     waiting_for_auto_phone = State()
     waiting_for_auto_code = State()
     waiting_for_auto_password = State()
@@ -712,15 +714,36 @@ async def proc_auto_price(message: Message, state: FSMContext):
         await message.answer("❌ أدخل سعراً صحيحاً:")
         return
     await state.update_data(num_price=price)
+    
+    # طلب الـ API ID من المستخدم مباشرة لتجنب الأخطاء
+    await state.set_state(States.waiting_for_auto_api_id)
+    await message.answer("🔑 أرسل **API ID** الخاص بحسابك (يمكنك الحصول عليه من my.telegram.org):")
+
+@dp.message(States.waiting_for_auto_api_id)
+async def proc_auto_api_id(message: Message, state: FSMContext):
+    try:
+        api_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ يجب أن يكون API ID رقماً صحيحاً، أعد إرساله:")
+        return
+    await state.update_data(api_id=api_id)
+    await state.set_state(States.waiting_for_auto_api_hash)
+    await message.answer("🔒 أرسل **API HASH** الخاص بك:")
+
+@dp.message(States.waiting_for_auto_api_hash)
+async def proc_auto_api_hash(message: Message, state: FSMContext):
+    api_hash = message.text.strip()
+    await state.update_data(api_hash=api_hash)
     await state.set_state(States.waiting_for_auto_phone)
     await message.answer("📱 أرسل الآن رقم الهاتف مع رمز الدولة (مثال: `+1234567890`):")
 
 @dp.message(States.waiting_for_auto_phone)
 async def proc_auto_phone(message: Message, state: FSMContext):
     phone = message.text.strip()
+    data = await state.get_data()
     await message.answer("⏳ جاري الاتصال بتليجرام وإرسال كود التحقق...")
     try:
-        client = TelegramClient(StringSession(), DEFAULT_API_ID, DEFAULT_API_HASH)
+        client = TelegramClient(StringSession(), data["api_id"], data["api_hash"])
         await client.connect()
         sent_code = await client.send_code_request(phone)
         await state.update_data(phone=phone, phone_code_hash=sent_code.phone_code_hash, client_session=client.session.save())
@@ -729,14 +752,14 @@ async def proc_auto_phone(message: Message, state: FSMContext):
         await message.answer("📥 تم إرسال الكود بنجاح، أرسله الآن:")
     except Exception as e:
         await state.clear()
-        await message.answer(f"❌ حدث خطأ:\n`{str(e)}`")
+        await message.answer(f"❌ حدث خطأ في البيانات:\n`{str(e)}`\n\nأعد المحاولة من لوحة التحكم.")
 
 @dp.message(States.waiting_for_auto_code)
 async def proc_auto_code(message: Message, state: FSMContext):
     code = message.text.strip()
     data = await state.get_data()
     try:
-        client = TelegramClient(StringSession(data["client_session"]), DEFAULT_API_ID, DEFAULT_API_HASH)
+        client = TelegramClient(StringSession(data["client_session"]), data["api_id"], data["api_hash"])
         await client.connect()
         await client.sign_in(phone=data["phone"], code=code, phone_code_hash=data["phone_code_hash"])
         final_session = client.session.save()
@@ -748,10 +771,10 @@ async def proc_auto_code(message: Message, state: FSMContext):
         MEMORY_NUMBERS.append({
             "num_id": num_id, "country": "auto", "name": data["num_name"],
             "price": data["num_price"], "phone": data["phone"],
-            "session": final_session, "api_id": DEFAULT_API_ID, "api_hash": DEFAULT_API_HASH
+            "session": final_session, "api_id": data["api_id"], "api_hash": data["api_hash"]
         })
         await state.clear()
-        await message.answer("✅ تم إضافة الرقم وتفعيله بنجاح!")
+        await message.answer("✅ تم إضافة الرقم وتفعليه بنجاح!")
     except SessionPasswordNeededError:
         await state.set_state(States.waiting_for_auto_password)
         await message.answer("🔐 الحساب محمي بكلمة مرور (تحقق بخطوتين)، أرسلها الآن:")
@@ -764,7 +787,7 @@ async def proc_auto_password(message: Message, state: FSMContext):
     password = message.text.strip()
     data = await state.get_data()
     try:
-        client = TelegramClient(StringSession(data["client_session"]), DEFAULT_API_ID, DEFAULT_API_HASH)
+        client = TelegramClient(StringSession(data["client_session"]), data["api_id"], data["api_hash"])
         await client.connect()
         await client.sign_in(password=password)
         final_session = client.session.save()
@@ -776,7 +799,7 @@ async def proc_auto_password(message: Message, state: FSMContext):
         MEMORY_NUMBERS.append({
             "num_id": num_id, "country": "auto", "name": data["num_name"],
             "price": data["num_price"], "phone": data["phone"],
-            "session": final_session, "api_id": DEFAULT_API_ID, "api_hash": DEFAULT_API_HASH
+            "session": final_session, "api_id": data["api_id"], "api_hash": data["api_hash"]
         })
         await state.clear()
         await message.answer("✅ تم تفعيل الرقم بنجاح!")
