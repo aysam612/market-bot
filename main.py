@@ -16,12 +16,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 
-# تحميل المتغيرات البيئية من ملف .env
 load_dotenv()
-
-# =====================================================================
-# 🛠️ [الإعدادات الأساسية (تسحب من ملف البيئة للأمان)]
-# =====================================================================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TON_WALLET_ADDRESS = os.getenv("TON_WALLET_ADDRESS", "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU")
@@ -46,10 +41,6 @@ CONFIG_DATA = {
     "ton_price": 1.35,
     "payment_methods": ["Telegram Stars ⭐", "TON 💎"]
 }
-
-# =====================================================================
-# 🚀 [تهيئة البوت والحالات]
-# =====================================================================
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -235,10 +226,6 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
     except Exception:
         pass
     await callback.answer()
-
-# =====================================================================
-# 👑 [لوحة التحكم والخدمات الإضافية]
-# =====================================================================
 
 @dp.callback_query(F.data == "admin_panel_main")
 @dp.message(Command("admin"))
@@ -482,10 +469,6 @@ async def process_transfer_amount(message: Message, state: FSMContext):
         await bot.send_message(target_id, f"💰 وصلك تحويل برصيد `${amount:.2f}` من المستخدم (`{sender_id}`).")
     except Exception:
         pass
-
-# =====================================================================
-# 💳 [نظام الشحن وطرق الدفع: النجوم و TON]
-# =====================================================================
 
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu_handler(callback: CallbackQuery, state: FSMContext):
@@ -1102,4 +1085,21 @@ async def get_otp_callback(callback: CallbackQuery):
     purchased = next((p for p in MEMORY_PURCHASES if p["number_id"] == num_id and p["user_id"] == callback.from_user.id), None)
     if not purchased:
         await callback.answer("❌ عذراً، لم يتم العثور على تفاصيل هذا الرقم.", show_alert=True)
- 
+        return
+    
+    data = purchased["num_data"]
+    otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
+    await callback.answer("🔄 تم تحديث الحالة وجلب الرسائل.", show_alert=True)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
+    ])
+    try:
+        await callback.message.edit_text(f"🎉 **تفاصيل الرقم المشتري:**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
+    except Exception:
+        pass
+
+async def fetch_otp_async(session_str: str, api_id: int, api_hash: str) -> str:
+    try:
+        client = TelegramClient(StringSession(session_str), api_id, api_hash)
+    
