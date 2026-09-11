@@ -20,7 +20,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 
 # رابط مونجو الصحيح والمحدث (ضع كلمة المرور مكان <db_password>)
-MONGO_URI = "mongodb+srv://aysamaysam426_db_user:<wwsskkppwwsskkpp>@aysam.ut0hpt5.mongodb.net/?appName=aysam"
+MONGO_URI = "mongodb+srv://aysamaysam426_db_user:wwsskkppwwsskkpp@aysam.ut0hpt5.mongodb.net/?appName=aysam"
+
 
 # الاتصال بقاعدة البيانات
 mongo_client = AsyncIOMotorClient(MONGO_URI)
