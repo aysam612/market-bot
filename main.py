@@ -16,52 +16,43 @@ from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 
 # =====================================================================
-# 🛠️ [منطقة التعديل الشامل - عدل كل ما تريد هنا بكل حرية]
+# 🛠️ [منطقة الإعدادات الأساسية]
 # =====================================================================
 
-# 1. توكن البوت الخاص بك (يمكنك تغييره هنا)
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 
-# 2. بيانات تليجرام API (لا تقم بتغييرها إلا إذا كنت ترغب بذلك)
-DEFAULT_API_ID = 12345678       
-DEFAULT_API_HASH = "your_api_hash_here"  
+# احصل على API ID و API Hash من الموقع الرسمي: my.telegram.org
+DEFAULT_API_ID = 1234567       # استبدلها برقم الـ API ID الخاص بك
+DEFAULT_API_HASH = "your_api_hash_here"  # استبدلها بالـ API Hash الخاص بك
 
-# 3. بيانات المالك الأساسي للبوت
 DEFAULT_ADMIN_USERNAME = "aaysam"
 DEFAULT_ADMIN_USER_ID = 8863784148
 
-# 4. قناة الإجبارية (اكتب يوزر القناة بدون @، أو اتركه فارغاً إذا لا تريد اشتراك إجباري)
 REQUIRED_CHANNEL = "VPP8P"
-
-# 5. قيمة الهدية اليومية ورابط الإحالة ($)
 BONUS_AMOUNT = 0.01
 
-# 6. النصوص الافتتاحية والترحيبية للأسواق واللوحات (يمكنك تغيير النصوص كما تحب)
 TEXTS = {
     "welcome_ar": "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n🆔 معرفك: `{user_id}`\n💵 رصيدك: `${balance:.2f}`\n\nاختر ما يناسبك من القائمة أدناه 👇",
     "welcome_en": "👋 Welcome to X9 Store for Premium Numbers 🌐!\n\n🆔 ID: `{user_id}`\n💵 Balance: `${balance:.2f}`\n\nChoose what you want from the menu below 👇",
     "support_username": "aaysam"
 }
 
-# 7. قائمة الأزرار المخصصة الثابتة (يمكنك إضافة أو تعديل أو حذف أي زر تريده هنا)
 CUSTOM_BUTTONS = [
     {"name": "💬 قناة التليجرام", "url": "https://t.me/VPP8P"},
     {"name": "🔥 جروب الدعم", "url": "https://t.me/aaysam"}
 ]
 
-# 8. أسعار الخدمات (سعر النجمة الواحدة بالدولار)
 CONFIG_DATA = {
     "star_price": 0.01
 }
 
 # =====================================================================
-# 🚀 [نهاية منطقة التعديل - الكود البرمجي التشغيلي الأساسي]
+# 🚀 [الكود البرمجي التشغيلي الشامل]
 # =====================================================================
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# قواعد بيانات الذاكرة المحلية الفورية
 MEMORY_USERS = {
     DEFAULT_ADMIN_USER_ID: {"user_id": DEFAULT_ADMIN_USER_ID, "balance": 10000.0, "language": "ar", "banned": False}
 }
@@ -72,10 +63,6 @@ class States(StatesGroup):
     waiting_for_stars_count = State()
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
-    waiting_for_new_admin_id = State()
-    waiting_for_new_admin_username = State()
-    waiting_for_btn_name = State()
-    waiting_for_btn_url = State()
     
     waiting_for_auto_num_id = State()
     waiting_for_auto_num_name = State()
@@ -89,6 +76,16 @@ class States(StatesGroup):
     waiting_for_star_price = State()
     waiting_for_ban_id = State()
     waiting_for_unban_id = State()
+    
+    # حالات لوحة التحكم الجديدة المتقدمة
+    waiting_for_broadcast_msg = State()
+    waiting_for_add_balance_id = State()
+    waiting_for_add_balance_amount = State()
+    waiting_for_deduct_balance_id = State()
+    waiting_for_deduct_balance_amount = State()
+    waiting_for_set_balance_id = State()
+    waiting_for_set_balance_amount = State()
+    waiting_for_check_user_id = State()
 
 async def check_subscription(user_id: int) -> bool:
     if not REQUIRED_CHANNEL:
@@ -233,6 +230,10 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
         pass
     await callback.answer()
 
+# =====================================================================
+# 👑 [لوحة التحكم المتقدمة والشاملة للمالك]
+# =====================================================================
+
 @dp.callback_query(F.data == "admin_panel_main")
 @dp.message(Command("admin"))
 async def admin_panel_handler(event, state: FSMContext = None):
@@ -252,16 +253,20 @@ async def admin_panel_handler(event, state: FSMContext = None):
 
     builder = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ إضافة رقم تليجرام جديد", callback_data="admin_auto_add_num")],
-        [InlineKeyboardButton(text="✏️ إدارة الأرقام الحالية (تعديل/حذف)", callback_data="admin_manage_nums")],
-        [InlineKeyboardButton(text=f"⭐ تعديل سعر النجمة ({current_star_price} حالياً)", callback_data="admin_change_star_price")],
-        [InlineKeyboardButton(text="🚫 حظر مستخدم", callback_data="admin_ban_user"), InlineKeyboardButton(text="✅ رفع حظر مستخدم", callback_data="admin_unban_user")],
+        [InlineKeyboardButton(text="✏️ إدارة الأرقام الحالية", callback_data="admin_manage_nums")],
+        [InlineKeyboardButton(text="👥 إحصائيات البوت والمستخدمين", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="📢 إذاعة رسالة للجميع", callback_data="admin_broadcast")],
+        [InlineKeyboardButton(text="➕ إضافة رصيد لمستخدم", callback_data="admin_add_balance"), InlineKeyboardButton(text="➖ خصم رصيد من مستخدم", callback_data="admin_deduct_balance")],
+        [InlineKeyboardButton(text="🎯 تعيين رصيد محدد", callback_data="admin_set_balance"), InlineKeyboardButton(text="🔍 الاستعلام عن مستخدم", callback_data="admin_check_user")],
+        [InlineKeyboardButton(text=f"⭐ تعديل سعر النجمة ({current_star_price})", callback_data="admin_change_star_price")],
+        [InlineKeyboardButton(text="🚫 حظر مستخدم", callback_data="admin_ban_user"), InlineKeyboardButton(text="✅ رفع حظر", callback_data="admin_unban_user")],
         [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
     ])
     
     text = (
-        f"🛠 **لوحة تحكم الأرقام السريعة:**\n"
+        f"🛠 **لوحة التحكم الشاملة والمتقدمة:**\n"
         f"👤 المالك: `{DEFAULT_ADMIN_USERNAME}` (`{DEFAULT_ADMIN_USER_ID}`)\n\n"
-        f"اختر العملية التي تريد تنفيذها:"
+        f"اختر العملية التي تريد تنفيذها من القائمة أدناه:"
     )
     
     if isinstance(event, CallbackQuery):
@@ -269,6 +274,198 @@ async def admin_panel_handler(event, state: FSMContext = None):
         await event.answer()
     else:
         await message.answer(text, reply_markup=builder, parse_mode="Markdown")
+
+# 1. إحصائيات البوت
+@dp.callback_query(F.data == "admin_stats")
+async def admin_stats_handler(callback: CallbackQuery):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    total_users = len(MEMORY_USERS)
+    total_nums = len(MEMORY_NUMBERS)
+    total_purchases = len(MEMORY_PURCHASES)
+    banned_users = sum(1 for u in MEMORY_USERS.values() if u.get("banned", False))
+    
+    text = (
+        f"📊 **إحصائيات البوت الشاملة:**\n\n"
+        f"👥 إجمالي المستخدمين: `{total_users}`\n"
+        f"🚫 عدد المستخدمين المحظورين: `{banned_users}`\n"
+        f"📱 إجمالي الأرقام المتاحة: `{total_nums}`\n"
+        f"🛒 إجمالي العمليات المباعة: `{total_purchases}`\n"
+    )
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text(text, reply_markup=back_kb, parse_mode="Markdown")
+    await callback.answer()
+
+# 2. الإذاعة العامة
+@dp.callback_query(F.data == "admin_broadcast")
+async def admin_broadcast_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_broadcast_msg)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text("📢 أرسل الرسالة المراد إذاعتها لجميع المستخدمين (تدعم التنسيق والماركدون):", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_broadcast_msg)
+async def execute_broadcast(message: Message, state: FSMContext):
+    broadcast_text = message.text
+    await state.clear()
+    sent_count = 0
+    fail_count = 0
+    
+    status_msg = await message.answer("⏳ جاري بدء الإذاعة...")
+    for uid in MEMORY_USERS.keys():
+        try:
+            await bot.send_message(uid, broadcast_text, parse_mode="Markdown")
+            sent_count += 1
+            await asyncio.sleep(0.05) # تجنب الحظر المؤقت من تيليجرام
+        except Exception:
+            fail_count + 1
+            
+    await status_msg.edit_text(f"✅ **تمت الإذاعة بنجاح!**\n\n📤 الرسائل المرسلة: `{sent_count}`\n❌ الفاشلة: `{fail_count}`")
+
+# 3. إدارة الأرصدة (إضافة، خصم، تعيين، استعلام)
+@dp.callback_query(F.data == "admin_add_balance")
+async def admin_add_bal_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_add_balance_id)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text("➕ أرسل آي دي (User ID) المستخدم لإضافة رصيد له:", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_add_balance_id)
+async def proc_add_bal_id(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("❌ آي دي غير صحيح:")
+        return
+    await state.update_data(target_id=int(message.text.strip()))
+    await state.set_state(States.waiting_for_add_balance_amount)
+    await message.answer("💵 أرسل المبلغ المراد إضافته (مثال: `5.00`):")
+
+@dp.message(States.waiting_for_add_balance_amount)
+async def proc_add_bal_amount(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.strip().replace("$", ""))
+    except ValueError:
+        await message.answer("❌ أدخل مبلغاً صحيحاً:")
+        return
+    data = await state.get_data()
+    target_id = data.get("target_id")
+    if target_id not in MEMORY_USERS:
+        MEMORY_USERS[target_id] = {"balance": 0.0, "language": "ar"}
+    MEMORY_USERS[target_id]["balance"] += amount
+    await state.clear()
+    await message.answer(f"✅ تمت إضافة `${amount:.2f}` بنجاح للمستخدم `{target_id}`.")
+
+# خصم رصيد
+@dp.callback_query(F.data == "admin_deduct_balance")
+async def admin_deduct_bal_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_deduct_balance_id)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text("➖ أرسل آي دي المستخدم لخصم رصيد منه:", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_deduct_balance_id)
+async def proc_deduct_bal_id(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("❌ آي دي غير صحيح:")
+        return
+    await state.update_data(target_id=int(message.text.strip()))
+    await state.set_state(States.waiting_for_deduct_balance_amount)
+    await message.answer("💵 أرسل المبلغ المراد خصمه:")
+
+@dp.message(States.waiting_for_deduct_balance_amount)
+async def proc_deduct_bal_amount(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.strip().replace("$", ""))
+    except ValueError:
+        await message.answer("❌ أدخل مبلغاً صحيحاً:")
+        return
+    data = await state.get_data()
+    target_id = data.get("target_id")
+    if target_id not in MEMORY_USERS:
+        MEMORY_USERS[target_id] = {"balance": 0.0}
+    MEMORY_USERS[target_id]["balance"] = max(0.0, MEMORY_USERS[target_id]["balance"] - amount)
+    await state.clear()
+    await message.answer(f"✅ تم خصم `${amount:.2f}` بنجاح من المستخدم `{target_id}`.")
+
+# تعيين رصيد
+@dp.callback_query(F.data == "admin_set_balance")
+async def admin_set_bal_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_set_balance_id)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text("🎯 أرسل آي دي المستخدم لتعيين رصيد محدد له:", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_set_balance_id)
+async def proc_set_bal_id(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("❌ آي دي غير صحيح:")
+        return
+    await state.update_data(target_id=int(message.text.strip()))
+    await state.set_state(States.waiting_for_set_balance_amount)
+    await message.answer("💵 أرسل الرصيد الجديد المباشر:")
+
+@dp.message(States.waiting_for_set_balance_amount)
+async def proc_set_bal_amount(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.strip().replace("$", ""))
+    except ValueError:
+        await message.answer("❌ أدخل مبلغاً صحيحاً:")
+        return
+    data = await state.get_data()
+    target_id = data.get("target_id")
+    if target_id not in MEMORY_USERS:
+        MEMORY_USERS[target_id] = {"balance": 0.0}
+    MEMORY_USERS[target_id]["balance"] = amount
+    await state.clear()
+    await message.answer(f"✅ تم ضبط رصيد المستخدم `{target_id}` ليصبح `${amount:.2f}`.")
+
+# الاستعلام عن مستخدم
+@dp.callback_query(F.data == "admin_check_user")
+async def admin_check_user_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_check_user_id)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text("🔍 أرسل آي دي المستخدم للاستعلام عن تفاصيله:", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_check_user_id)
+async def proc_check_user_info(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("❌ آي دي غير صحيح:")
+        return
+    target_id = int(message.text.strip())
+    await state.clear()
+    
+    user_doc = MEMORY_USERS.get(target_id)
+    if not user_doc:
+        await message.answer(f"❌ المستخدم `{target_id}` غير مسجل في البوت.")
+        return
+        
+    bal = user_doc.get("balance", 0.0)
+    banned = user_doc.get("banned", False)
+    lang = user_doc.get("language", "ar")
+    ref = user_doc.get("referred_by", "لا يوجد")
+    
+    text = (
+        f"👤 **معلومات المستخدم:** `{target_id}`\n\n"
+        f"💵 الرصيد: `${bal:.2f}`\n"
+        f"🚫 محظور: `{'نعم' if banned else 'لا'}`\n"
+        f"🌐 اللغة: `{lang}`\n"
+        f"🤝 مُحال من طرف: `{ref}`"
+    )
+    await message.answer(text, parse_mode="Markdown")
+
+# =====================================================================
+# 📲 [إضافة أرقام تليجرام جديدة مع معالجة الأخطاء]
+# =====================================================================
 
 @dp.callback_query(F.data == "admin_auto_add_num")
 async def admin_auto_add_num(callback: CallbackQuery, state: FSMContext):
@@ -300,7 +497,7 @@ async def proc_auto_price(message: Message, state: FSMContext):
         return
     await state.update_data(num_price=price)
     await state.set_state(States.waiting_for_auto_phone)
-    await message.answer("📱 أرسل الآن **رقم الهاتف** مع رمز الدولة (مثال: `+1234567890`):")
+    await message.answer("📱 أرسل الآن **رقم الهاتف** مع رمز الدولة (مثال: `+1234567890`):\n\n⚠️ *تأكد من وضع بيانات API الصحيحة في إعدادات الكود أولاً.*")
 
 @dp.message(States.waiting_for_auto_phone)
 async def proc_auto_phone(message: Message, state: FSMContext):
@@ -316,7 +513,7 @@ async def proc_auto_phone(message: Message, state: FSMContext):
         await message.answer("📥 تم إرسال الكود بنجاح!\n\nأرسل الآن **كود التحقق (OTP)** الذي وصلك:")
     except Exception as e:
         await state.clear()
-        await message.answer(f"❌ حدث خطأ:\n`{str(e)}`")
+        await message.answer(f"❌ حدث خطأ في الـ API ID أو الـ Hash أو الرقم:\n`{str(e)}`")
 
 @dp.message(States.waiting_for_auto_code)
 async def proc_auto_code(message: Message, state: FSMContext):
@@ -383,6 +580,7 @@ async def proc_auto_password(message: Message, state: FSMContext):
         await state.clear()
         await message.answer(f"❌ كلمة المرور غير صحيحة: `{str(e)}`")
 
+# حظر ورفع حظر المستخدمين
 @dp.callback_query(F.data == "admin_ban_user")
 async def admin_ban_user_prompt(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
@@ -516,6 +714,10 @@ async def save_new_num_name(message: Message, state: FSMContext):
             n["name"] = new_name
     await state.clear()
     await message.answer(f"✅ **تم تحديث الاسم إلى:** `{new_name}` بنجاح!")
+
+# =====================================================================
+# 🛒 [أقسام المتجر والشراء للعملاء]
+# =====================================================================
 
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
