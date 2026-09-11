@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -15,21 +16,24 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 
+# تحميل المتغيرات البيئية من ملف .env
+load_dotenv()
+
 # =====================================================================
-# 🛠️ [الإعدادات الأساسية]
+# 🛠️ [الإعدادات الأساسية (تسحب من ملف البيئة للأمان)]
 # =====================================================================
 
-BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
-TON_WALLET_ADDRESS = "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+TON_WALLET_ADDRESS = os.getenv("TON_WALLET_ADDRESS", "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU")
 
-DEFAULT_ADMIN_USERNAME = "aaysam"
-DEFAULT_ADMIN_USER_ID = 8863784148
+DEFAULT_ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "aaysam")
+DEFAULT_ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "8863784148"))
 
-REQUIRED_CHANNEL = "VPP8P"
+REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "VPP8P")
 BONUS_AMOUNT = 0.01
 
 TEXTS = {
-    "support_username": "aaysam"
+    "support_username": os.getenv("SUPPORT_USERNAME", "aaysam")
 }
 
 CUSTOM_BUTTONS = [
@@ -887,7 +891,7 @@ async def proc_auto_phone(message: Message, state: FSMContext):
         
         await state.update_data(phone=phone, phone_code_hash=sent_code.phone_code_hash, client_session=session_str)
         await state.set_state(States.waiting_for_auto_code)
-        await message.answer("📥 تم إرسال الكود بنجاح، أرسله الآن:")
+        await message.answer("📥 تم إرسال الكود بنجاح، أرسل الآن:")
     except Exception as e:
         await state.clear()
         await message.answer(f"❌ حدث خطأ في البيانات:\n`{str(e)}`\n\nأعد المحاولة من لوحة التحكم.")
@@ -1092,16 +1096,10 @@ async def buy_with_balance_fixed(callback: CallbackQuery):
     ])
     await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
 
-async def fetch_otp_async(session_str: str, api_id: int, api_hash: str) -> str:
-    try:
-        client = TelegramClient(StringSession(session_str), api_id, api_hash)
-        await client.connect()
-        messages = await client.get_messages(777000, limit=5)
-        await client.disconnect()
-        
-        for msg in messages:
-            if msg.text:
-                otp_match = re.search(r'\b\d{5,6}\b', msg.text)
-                if otp_match:
-                    return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\n*(اضغط على زر التحديث في الأسفل إذا لم يصلك كود جديد بعد)*"
-        return "⏳ لم يصل كود تفعيل جديد بعد. اضغط عل
+@dp.callback_query(F.data.startswith("get_otp_"))
+async def get_otp_callback(callback: CallbackQuery):
+    num_id = callback.data.replace("get_otp_", "")
+    purchased = next((p for p in MEMORY_PURCHASES if p["number_id"] == num_id and p["user_id"] == callback.from_user.id), None)
+    if not purchased:
+        await callback.answer("❌ عذراً، لم يتم العثور على تفاصيل هذا الرقم.", show_alert=True)
+ 
