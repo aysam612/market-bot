@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import sqlite3
+import json
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -45,14 +46,12 @@ MAIN_SECTIONS = [
     "أرقام تليجرام عادية"
 ]
 
-# إعداد قاعدة البيانات المحلية SQLite
 DB_FILE = "bot_database.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # جدول المستخدمين
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -63,7 +62,6 @@ def init_db():
         )
     """)
     
-    # جدول الأرقام
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS numbers (
             num_id TEXT PRIMARY KEY,
@@ -77,7 +75,6 @@ def init_db():
         )
     """)
     
-    # جدول المشتريات
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS purchases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +84,6 @@ def init_db():
         )
     """)
     
-    # جدول الإعدادات
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS config (
             key TEXT PRIMARY KEY,
@@ -100,7 +96,6 @@ def init_db():
 
 init_db()
 
-# دوال مساعدة للتعامل مع SQLite
 def get_config_val(key, default):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -168,7 +163,7 @@ async def get_user(user_id: int):
     return user
 
 async def update_user(user_id: int, data: dict):
-    user = await get_user(user_id) # التأكد من وجوده
+    user = await get_user(user_id)
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -269,7 +264,6 @@ async def get_main_keyboard(user_id):
         f"💵 رصيدك: `${balance:.2f}`\n\n"
         "اختر ما يناسبك من القائمة 👇"
     )
-        
     return text_header, keyboard
 
 @dp.callback_query(F.data == "toggle_lang")
@@ -289,8 +283,7 @@ async def toggle_lang_callback(callback: CallbackQuery):
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    user = message.from_user
-    user_id = user.id
+    user_id = message.from_user.id
     
     user_doc = await get_user(user_id)
     if user_doc.get("banned", False):
@@ -1201,224 +1194,289 @@ async def delete_number_handler(callback: CallbackQuery):
     
     await callback.answer("✅ تم حذف الرقم بنجاح!", show_alert=True)
     
-    if not numbers_list:
-        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-        await callback.message.edit_text("📭 لا توجد أرقام مضافة حالياً.", reply_markup=back_kb)
-        return
-
     buttons = []
-    for num in numbers_list:
-        buttons.append([
-            InlineKeyboardButton(text=f"🗑 {num[1]} | {num[2]}", callback_data=f"del_num_{num[0]}"),
-            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num[0]}")
-        ])
+    if numbers_list:
+        for num in numbers_list:
+            buttons.append([
+                InlineKeyboardButton(text=f"🗑 [{num[1]}] {num[2]}", callback_data=f"del_num_{num[0]}"),
+                InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num[0]}")
+            ])
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
     await callback.message.edit_text("⚙️ **إدارة الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 # =====================================================================
-# 🛒 [عرض الأقسام غير الفارغة فقط للمستخدمين]
+# 🛒 [قسم متجر الأرقام والشراء الفوري وجلب الـ OTP]
 # =====================================================================
 
 @dp.callback_query(F.data == "buy_number_menu")
-async def buy_number_menu(callback: CallbackQuery):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT section FROM numbers")
-    rows = cursor.fetchall()
-    conn.close()
-    
-    if not rows:
-        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-        await callback.message.edit_text("📭 عذراً، لا توجد أرقام متاحة للبيع في الوقت الحالي.", reply_markup=back_kb)
-        await callback.answer()
+async def buy_number_menu_handler(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    user_doc = await get_user(user_id)
+    if user_doc.get("banned", False):
+        await callback.answer("❌ أنت محظور.", show_alert=True)
         return
 
-    active_sections = {}
-    for row in rows:
-        sec = row[0]
-        if sec:
-            active_sections[sec] = active_sections.get(sec, 0) + 1
+    keyboard_buttons = []
+    for sec in MAIN_SECTIONS:
+        keyboard_buttons.append([InlineKeyboardButton(text=f"📁 {sec}", callback_data=f"shop_sec_{sec}")])
+    keyboard_buttons.append([InlineKeyboardButton(text="🛍 أرقامي المشتراة", callback_data="my_purchased_numbers")])
+    keyboard_buttons.append([InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")])
 
-    if not active_sections:
-        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
-        await callback.message.edit_text("📭 عذراً، لا توجد أقسام تحتوي على أرقام حالياً.", reply_markup=back_kb)
-        await callback.answer()
-        return
-
-    buttons = []
-    for sec, count in active_sections.items():
-        buttons.append([InlineKeyboardButton(text=f"📁 {sec} (متاح: {count})", callback_data=f"view_sec_{sec}")])
-        
-    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")])
-    await callback.message.edit_text("🛒 **اختر القسم المطلوب لتصفح الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    text = "🛒 **اختر القسم الذي تريد شراء الأرقام منه:**"
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons), parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("view_sec_"))
-async def view_section_numbers(callback: CallbackQuery):
-    sec_name = callback.data.replace("view_sec_", "")
+@dp.callback_query(F.data.startswith("shop_sec_"))
+async def shop_section_handler(callback: CallbackQuery):
+    section_name = callback.data.replace("shop_sec_", "")
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT num_id, country, price FROM numbers WHERE section = ?", (sec_name,))
-    matched_nums = cursor.fetchall()
+    cursor.execute("SELECT num_id, country, price FROM numbers WHERE section = ?", (section_name,))
+    nums = cursor.fetchall()
     conn.close()
-    
-    if not matched_nums:
-        await callback.answer("❌ لا توجد أرقام في هذا القسم حالياً.", show_alert=True)
-        return
 
-    buttons = []
-    for num in matched_nums:
-        num_id, details, price = num[0], num[1], num[2]
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"{details} | 💵 ${price:.2f}", 
-                callback_data=f"buy_num_{num_id}"
-            )
-        ])
-        
-    buttons.append([InlineKeyboardButton(text="🔙 رجوع للأقسام", callback_data="buy_number_menu")])
-    await callback.message.edit_text(f"📁 **الأرقام المتوفرة في قسم ({sec_name}):**\nاختر الرقم المناسب لعرض التفاصيل والشراء:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    keyboard_buttons = []
+    if nums:
+        for num in nums:
+            num_id, country, price = num[0], num[1], num[2]
+            keyboard_buttons.append([InlineKeyboardButton(text=f"{country} — ${price:.2f}", callback_data=f"buy_item_{num_id}")])
+    else:
+        keyboard_buttons.append([InlineKeyboardButton(text="❌ لا توجد أرقام متاحة حالياً في هذا القسم", callback_data="buy_number_menu")])
+
+    keyboard_buttons.append([InlineKeyboardButton(text="🔙 رجوع للأقسام", callback_data="buy_number_menu")])
+    
+    await callback.message.edit_text(f"📁 **القسم:** `{section_name}`\n\nاختر الرقم المناسب للشراء:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons), parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("buy_num_"))
-async def buy_number_details(callback: CallbackQuery):
-    num_id = callback.data.replace("buy_num_", "")
+@dp.callback_query(F.data.startswith("buy_item_"))
+async def buy_item_confirmation(callback: CallbackQuery):
+    num_id = callback.data.replace("buy_item_", "")
     
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT num_id, section, country, price FROM numbers WHERE num_id = ?", (num_id,))
-    row = cursor.fetchone()
+    cursor.execute("SELECT num_id, section, country, price, phone FROM numbers WHERE num_id = ?", (num_id,))
+    item = cursor.fetchone()
     conn.close()
 
-    if not row:
-        await callback.answer("❌ هذا الرقم غير متوفر حالياً.", show_alert=True)
+    if not item:
+        await callback.answer("❌ عذراً، هذا الرقم تم بيعه أو لم يعد متوفراً!", show_alert=True)
         return
-        
-    sec, details, price = row[1], row[2], row[3]
 
+    country, price = item[2], item[3]
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"💳 تأكيد الشراء مقابل ${price:.2f}", callback_data=f"confirm_buy_{num_id}")],
-        [InlineKeyboardButton(text="🔙 رجوع للقسم", callback_data=f"view_sec_{sec}")]
+        [InlineKeyboardButton(text="✅ تأكيد الشراء", callback_data=f"confirm_buy_{num_id}")],
+        [InlineKeyboardButton(text="❌ إلغاء", callback_data="buy_number_menu")]
     ])
     
     text = (
-        f"📋 **تفاصيل الرقم المطلوب:**\n\n"
-        f"📁 القسم: `{sec}`\n"
-        f"📌 الوصف: `{details}`\n"
-        f"💵 السعر: **${price:.2f}**\n\n"
-        "هل تريد إتمام عملية الشراء فوراً؟"
+        f"🛒 **تأكيد عملية الشراء:**\n\n"
+        f"• الدولة والتفاصيل: `{country}`\n"
+        f"• السعر المطلوب: `${price:.2f}`\n\n"
+        f"هل أنت متأكد من رغبتك في إتمام عملية الشراء؟"
     )
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("confirm_buy_"))
-async def confirm_buy_handler(callback: CallbackQuery):
+async def execute_purchase(callback: CallbackQuery):
     user_id = callback.from_user.id
     num_id = callback.data.replace("confirm_buy_", "")
-    
+
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT num_id, section, country, price, phone, session, api_id, api_hash FROM numbers WHERE num_id = ?", (num_id,))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        await callback.answer("❌ عذراً، لقد سبقك شخص آخر في شراء هذا الرقم!", show_alert=True)
+    item = cursor.fetchone()
+    conn.close()
+
+    if not item:
+        await callback.answer("❌ عذراً، الرقم غير متوفر.", show_alert=True)
         return
 
-    data = {
-        "num_id": row[0],
-        "section": row[1],
-        "country": row[2],
-        "price": row[3],
-        "phone": row[4],
-        "session": row[5],
-        "api_id": row[6],
-        "api_hash": row[7]
-    }
-
+    price = item[3]
     user = await get_user(user_id)
     balance = user.get("balance", 0.0)
-    if balance < data['price']:
-        conn.close()
-        await callback.answer("❌ رصيدك غير كافي لشراء هذا الرقم!", show_alert=True)
+
+    if balance < price:
+        await callback.answer("❌ رصيدك غير كافي لإتمام عملية الشراء. قم بشحن رصيدك أولاً!", show_alert=True)
         return
-        
-    await update_user(user_id, {"balance": balance - data['price']})
-    
-    # حذف الرقم من المتاحة وإضافته للمشتريات
-    cursor.execute("DELETE FROM numbers WHERE num_id = ?", (num_id,))
-    import json
-    cursor.execute("INSERT INTO purchases (user_id, number_id, num_data) VALUES (?, ?, ?)", (user_id, num_id, json.dumps(data)))
-    conn.commit()
-    conn.close()
-    
-    otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")],
-        [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
-    ])
-    await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n📌 **التفاصيل:** `{data.get('country','')}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
 
-async def fetch_otp_async(session_str: str, api_id: int, api_hash: str) -> str:
-    try:
-        client = TelegramClient(StringSession(session_str), api_id, api_hash)
-        await client.connect()
-        messages = await client.get_messages(777000, limit=5)
-        await client.disconnect()
-        
-        for msg in messages:
-            if msg.text:
-                otp_match = re.search(r'\b\d{5,6}\b', msg.text)
-                if otp_match:
-                    return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\n*(اضغط على زر التحديث في الأسفل إذا لم يصلك كود جديد بعد)*"
-        return "⏳ لم يصل كود تفعيل جديد بعد."
-    except Exception as e:
-        return f"❌ حدث خطأ أثناء جلب الكود:\n`{str(e)}`"
+    new_balance = balance - price
+    await update_user(user_id, {"balance": new_balance})
 
-@dp.callback_query(F.data.startswith("get_otp_"))
-async def refresh_otp_handler(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    num_id = callback.data.replace("get_otp_", "")
-    
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT num_data FROM purchases WHERE user_id = ? AND number_id = ?", (user_id, num_id))
+    cursor.execute("DELETE FROM numbers WHERE num_id = ?", (num_id,))
+    num_data_json = json.dumps({
+        "num_id": item[0],
+        "section": item[1],
+        "country": item[2],
+        "price": item[3],
+        "phone": item[4],
+        "session": item[5],
+        "api_id": item[6],
+        "api_hash": item[7]
+    })
+    cursor.execute("INSERT INTO purchases (user_id, number_id, num_data) VALUES (?, ?, ?)", (user_id, num_id, num_data_json))
+    conn.commit()
+    conn.close()
+
+    success_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📦 أرقامي المشتراة", callback_data="my_purchased_numbers")],
+        [InlineKeyboardButton(text="🏠 الرئيسية", callback_data="main_menu")]
+    ])
+    
+    text = (
+        f"🎉 **تمت عملية الشراء بنجاح!**\n\n"
+        f"📱 الرقم: `{item[4]}`\n"
+        f"🌍 الدولة: `{item[2]}`\n"
+        f"💵 السعر المدفوع: `${price:.2f}`\n\n"
+        f"يمكنك الانتقال إلى قسم (أرقامي المشتراة) لعرض الجلسة أو طلب كود التحقق (OTP) في أي وقت."
+    )
+    await callback.message.edit_text(text, reply_markup=success_kb, parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data == "my_purchased_numbers")
+async def my_purchased_numbers_handler(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, num_data FROM purchases WHERE user_id = ?", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]])
+        await callback.message.edit_text("📭 لم تقم بشراء أي أرقام بعد.", reply_markup=back_kb)
+        await callback.answer()
+        return
+
+    buttons = []
+    for row in rows:
+        p_id = row[0]
+        data = json.loads(row[1])
+        buttons.append([InlineKeyboardButton(text=f"📱 {data['country']} ({data['phone']})", callback_data=f"manage_purchased_{p_id}")])
+    
+    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")])
+    await callback.message.edit_text("📦 **سجل أرقامك المشتراة:**\n\nاختر الرقم لعرض تفاصيله أو طلب كود التحقق:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("manage_purchased_"))
+async def manage_purchased_item(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    p_id = int(callback.data.replace("manage_purchased_", ""))
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_data FROM purchases WHERE id = ? AND user_id = ?", (p_id, user_id))
     row = cursor.fetchone()
     conn.close()
 
     if not row:
-        await callback.answer("❌ لم يتم العثور على تفاصيل هذا الرقم في سجلك.", show_alert=True)
+        await callback.answer("❌ الرقم غير موجود أو لا تملكه.", show_alert=True)
         return
-        
-    import json
+
     data = json.loads(row[0])
-    await callback.answer("🔄 جاري فحص رسائل تليجرام لجلب الكود الجديد...")
-    
-    otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
-    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 تحديث الكود (OTP)", callback_data=f"get_otp_{num_id}")],
-        [InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")]
+        [InlineKeyboardButton(text="📥 طلب كود التحقق (OTP)", callback_data=f"get_otp_{p_id}")],
+        [InlineKeyboardButton(text="📋 نسخ كود الجلسة (StringSession)", callback_data=f"get_sess_{p_id}")],
+        [InlineKeyboardButton(text="🔙 أرقامي المشتراة", callback_data="my_purchased_numbers")]
     ])
+
+    text = (
+        f"📱 **تفاصيل الرقم المشتراة:**\n\n"
+        f"• الدولة: `{data['country']}`\n"
+        f"• الهاتف: `{data['phone']}`\n"
+        f"• API ID: `{data['api_id']}`\n"
+        f"• API Hash: `{data['api_hash']}`"
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("get_sess_"))
+async def get_session_string(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    p_id = int(callback.data.replace("get_sess_", ""))
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_data FROM purchases WHERE id = ? AND user_id = ?", (p_id, user_id))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        await callback.answer("❌ خطأ.", show_alert=True)
+        return
+
+    data = json.loads(row[0])
+    session_str = data['session']
+    await callback.message.answer(f"📋 **كود الجلسة (StringSession) الخاص بك:**\n\n`{session_str}`", parse_mode="Markdown")
+    await callback.answer("تم إرسال كود الجلسة في رسالة منفصلة!")
+
+@dp.callback_query(F.data.startswith("get_otp_"))
+async def get_otp_code(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    p_id = int(callback.data.replace("get_otp_", ""))
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_data FROM purchases WHERE id = ? AND user_id = ?", (p_id, user_id))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        await callback.answer("❌ خطأ.", show_alert=True)
+        return
+
+    data = json.loads(row[0])
+    await callback.answer("⏳ جاري فحص الرسائل الأخيرة لتليجرام واستخراج كود التحقق...", show_alert=True)
+
     try:
-        await callback.message.edit_text(f"📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود المحدث:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
-    except Exception:
-        pass
+        client = TelegramClient(StringSession(data['session']), data['api_id'], data['api_hash'])
+        await client.connect()
+        
+        messages = await client.get_messages(777000, limit=3)
+        await client.disconnect()
+
+        otp_found = None
+        for msg in messages:
+            match = re.search(r'\b(\d{5})\b', msg.message)
+            if match:
+                otp_found = match.group(1)
+                break
+            match_alt = re.search(r'code[:\s]+(\d+)', msg.message, re.IGNORECASE)
+            if match_alt:
+                otp_found = match_alt.group(1)
+                break
+
+        if otp_found:
+            await callback.message.answer(f"✅ **كود التحقق (OTP) الأخير للرقم `{data['phone']}` هو:**\n\n`{otp_found}`", parse_mode="Markdown")
+        else:
+            client2 = TelegramClient(StringSession(data['session']), data['api_id'], data['api_hash'])
+            await client2.connect()
+            dialogs = await client2.get_dialogs(limit=5)
+            latest_msg_text = ""
+            for d in dialogs:
+                msgs = await client2.get_messages(d.entity, limit=1)
+                if msgs:
+                    latest_msg_text += f"\n- من ({d.name}): {msgs[0].message[:100]}"
+            await client2.disconnect()
+            
+            await callback.message.answer(
+                f"⚠️ لم يتم العثور على رسالة كود صريحة من تليجرام.\n"
+                f"آخر النشاطات في الحساب:{latest_msg_text}"
+            )
+    except Exception as e:
+        await callback.message.answer(f"❌ حدث خطأ أثناء الاتصال بالجلسة وجلب الكود:\n`{str(e)}`")
 
 # =====================================================================
-# 🚀 [تشغيل البوت الأساسي]
+# 🏁 [تشغيل البوت الأساسي]
 # =====================================================================
 
 async def main():
-    print("🤖 البوت يعمل الآن بكفاءة مع SQLite (محلي)...")
+    print("🚀 Bot is starting and running successfully with SQLite DB...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        print("⚠️ تم إيقاف البوت بنجاح.")
+    asyncio.run(main())
