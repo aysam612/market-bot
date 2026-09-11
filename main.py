@@ -13,7 +13,7 @@ from aiogram.fsm.states import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
+from telethon.errors import SessionPasswordNeededError
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # =====================================================================
@@ -23,7 +23,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 TON_WALLET_ADDRESS = "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU"
 
-# رابط المونجو الخاص بك (تأكد من وضع كلمة المرور الصحيحة مكان db_password)
+# رابط المونجو الخاص بك
 MONGO_URL = "mongodb+srv://aysamaysam426_db_user:db_password@aysam.ut0hpt5.mongodb.net/?appName=aysam"
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client["telegram_store_db"]
@@ -48,7 +48,6 @@ CUSTOM_BUTTONS = [
     {"name": "🔥 جروب الدعم", "url": "https://t.me/aaysam"}
 ]
 
-# الأقسام الرئيسية المتاحة في المتجر
 MAIN_SECTIONS = [
     "شراء حساب جاهز",
     "إنشاء قديم",
@@ -483,7 +482,6 @@ async def process_transfer_amount(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu_handler(callback: CallbackQuery, state: FSMContext):
-    config = await get_config()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⭐ شحن عبر نجوم تليجرام (Stars)", callback_data="recharge_stars_flow")],
         [InlineKeyboardButton(text="💎 شحن عبر عملة TON", callback_data="recharge_ton_flow")],
