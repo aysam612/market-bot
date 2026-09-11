@@ -20,6 +20,7 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 # =====================================================================
 
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
+TON_WALLET_ADDRESS = "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU"
 
 DEFAULT_ADMIN_USERNAME = "aaysam"
 DEFAULT_ADMIN_USER_ID = 8863784148
@@ -38,7 +39,8 @@ CUSTOM_BUTTONS = [
 
 CONFIG_DATA = {
     "star_price": 0.01,
-    "payment_methods": ["Telegram Stars ⭐", "TON (قريباً)"]
+    "ton_price": 1.35, # سعر عملة التون بالدولار تقريباً
+    "payment_methods": ["Telegram Stars ⭐", "TON 💎"]
 }
 
 # =====================================================================
@@ -53,10 +55,11 @@ MEMORY_USERS = {
 }
 MEMORY_NUMBERS = []
 MEMORY_PURCHASES = []
-MEMORY_REFERRALS = set()  # حماية لتسجيل من تم احتساب إحالتهم مسبقاً لمنع التلاعب بالحسابات المتعددة
+MEMORY_REFERRALS = set()
 
 class States(StatesGroup):
     waiting_for_stars_count = State()
+    waiting_for_ton_amount = State()
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
     
@@ -107,7 +110,7 @@ async def get_main_keyboard(user_id):
     keyboard_buttons = [
         [InlineKeyboardButton(text="🛒 Buy Numbers Store" if lang == 'en' else "🛒 متجر الأرقام", callback_data="buy_number_menu")],
         [InlineKeyboardButton(text="⚡ My Account" if lang == 'en' else "⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 Daily Bonus" if lang == 'en' else "🎁 هدية يومية ($0.01)", callback_data="claim_bonus")],
-        [InlineKeyboardButton(text="💳 Recharge Stars / Pay" if lang == 'en' else "💳 شحن الرصيد وطرق الدفع", callback_data="recharge_menu")],
+        [InlineKeyboardButton(text="💳 Recharge Balance & Pay" if lang == 'en' else "💳 شحن الرصيد وطرق الدفع", callback_data="recharge_menu")],
         [InlineKeyboardButton(text="🤝 Ref Link" if lang == 'en' else "🤝 رابط إحالة", callback_data="ref_menu"), InlineKeyboardButton(text="💳 Transfer" if lang == 'en' else "💳 تحويل رصيد", callback_data="transfer_menu")],
     ]
     
@@ -123,7 +126,6 @@ async def get_main_keyboard(user_id):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
-    # النص الجديد المطلوب للترحيب
     text_header = (
         "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
         "• احصل على أرقام عالمية مميزة ومفعلة لجميع الاستخدامات.\n"
@@ -286,7 +288,7 @@ async def admin_payment_settings(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="✏️ تعديل / إضافة طريقة دفع جديدة", callback_data="admin_edit_pay_method")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]
     ])
-    await callback.message.edit_text(f"💳 **إدارة طرق الدفع:**\n\nالطرق الحالية المفعلة: `{methods}`\n\nاضغط لتعديلها أو إضافة عملات أخرى مثل TON:", reply_markup=back_kb)
+    await callback.message.edit_text(f"💳 **إدارة طرق الدفع:**\n\nالطرق الحالية المفعلة: `{methods}`\n\nعنوان محفظة التون المربوط:\n`{TON_WALLET_ADDRESS}`", reply_markup=back_kb)
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_edit_pay_method")
@@ -477,17 +479,22 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     except Exception:
         pass
 
+# =====================================================================
+# 💳 [نظام الشحن وطرق الدفع: النجوم و TON]
+# =====================================================================
+
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu_handler(callback: CallbackQuery, state: FSMContext):
-    methods_text = "\n".join([f"• {m}" for m in CONFIG_DATA.get("payment_methods", ["Telegram Stars ⭐"])])
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⭐ شحن عبر نجوم تليجرام (Stars)", callback_data="recharge_stars_flow")],
+        [InlineKeyboardButton(text="💎 شحن عبر عملة TON", callback_data="recharge_ton_flow")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
     text = (
-        f"💳 **قائمة شحن الرصيد وطرق الدفع المتاحة:**\n\n"
-        f"{methods_text}\n\n"
-        f"اختر وسيلة الشحن المناسبة أدناه:"
+        "💳 **قائمة شحن الرصيد وطرق الدفع المتاحة:**\n\n"
+        "• **نجوم تليجرام (Stars):** دفع فوري وآمن داخل التطبيق.\n"
+        "• **عملة TON:** تحويل رقمي مباشر عبر محفظتك.\n\n"
+        "اختر وسيلة الشحن المناسبة أدناه 👇"
     )
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
@@ -498,7 +505,12 @@ async def recharge_stars_flow(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="recharge_menu")]
     ])
-    await callback.message.edit_text("⭐ أرسل عدد النجوم التي تريد شحنها (مثال: `10`):", reply_markup=keyboard)
+    text = (
+        "⭐ **شحن الرصيد عبر نجوم تليجرام:**\n\n"
+        "📌 **ملاحظة هامة:** النجمة الواحدة تساوي سنت واحد (`$0.01`).\n\n"
+        "أرسل الآن عدد النجوم التي تريد شحنها (مثال: `10` أو `100`):"
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 @dp.message(States.waiting_for_stars_count)
@@ -522,11 +534,27 @@ async def process_stars_invoice(message: Message, state: FSMContext):
     await message.bot.send_invoice(
         chat_id=message.chat.id,
         title="شحن رصيد النجوم",
-        description=f"شحن {count} نجمة في رصيدك بالبوت",
+        description=f"شحن {count} نجمة في رصيدك بالبوت (النجمة = $0.01)",
         payload=f"stars_pay_{count}",
         currency="XTR",
         prices=prices
     )
+
+@dp.callback_query(F.data == "recharge_ton_flow")
+async def recharge_ton_flow(callback: CallbackQuery, state: FSMContext):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 رجوع", callback_data="recharge_menu")]
+    ])
+    text = (
+        "💎 **شحن الرصيد عبر عملة TON:**\n\n"
+        "قم بالتحويل إلى عنوان المحفظة أدناه، ثم تواصل مع الدعم الفني أو أرسل إيصال التحويل ليتم شحن رصيدك فوراً:\n\n"
+        f"📌 **عنوان المحفظة:**\n`{TON_WALLET_ADDRESS}`\n\n"
+        f"💡 **سعر التون الواحد التقريبي:** `${CONFIG_DATA.get('ton_price', 1.35)}`\n\n"
+        "💬 للتأكيد وإضافة الرصيد بعد التحويل، راسل الدعم الفني: "
+        f"[@{TEXTS['support_username']}]"
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await callback.answer()
 
 @dp.pre_checkout_query()
 async def pre_checkout_handler(query: PreCheckoutQuery):
@@ -807,7 +835,7 @@ async def admin_auto_add_num(callback: CallbackQuery, state: FSMContext):
 async def proc_auto_id(message: Message, state: FSMContext):
     await state.update_data(num_id=message.text.strip())
     await state.set_state(States.waiting_for_auto_num_name)
-    await message.answer("🏷 أرسل اسم الدولة مع العلم (مثال: `🇺🇸 أمريكا`):")
+    await message.answer("🏷 أرسل اسم الدولة مع العلم أو القسم (مثال: `🇺🇸 أمريكا (أرقام قديمة)`):")
 
 @dp.message(States.waiting_for_auto_num_name)
 async def proc_auto_name(message: Message, state: FSMContext):
@@ -942,7 +970,7 @@ async def edit_number_prompt(callback: CallbackQuery, state: FSMContext):
     await state.update_data(editing_num_id=num_id)
     await state.set_state(States.waiting_for_edit_name)
     back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_manage_nums")]])
-    await callback.message.edit_text("🏷 أرسل الاسم الجديد للرقم والدولة (مثال: `🇺🇸 أمريكا مميز`):", reply_markup=back_kb)
+    await callback.message.edit_text("🏷 أرسل الاسم الجديد للرقم والقسم (مثال: `🇺🇸 أمريكا (أرقام قديمة)`):", reply_markup=back_kb)
     await callback.answer()
 
 @dp.message(States.waiting_for_edit_name)
@@ -1017,7 +1045,7 @@ async def buy_number_menu(callback: CallbackQuery):
         buttons.append([InlineKeyboardButton(text=f"{name} - ${price:.2f} (متاح: {count})", callback_data=f"buy_group_{ids[0]}")])
         
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")])
-    await callback.message.edit_text("🌍 اختر الدولة لشراء الرقم:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("🛒 اختر القسم أو الرقم المناسب للشراء:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_group_"))
@@ -1031,7 +1059,7 @@ async def buy_group_handler(callback: CallbackQuery):
         [InlineKeyboardButton(text=f"تأكيد الشراء مقابل ${data['price']:.2f}", callback_data=f"buy_balance_{num_id}")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")]
     ])
-    await callback.message.edit_text(f"الدولة: {data['name']}\nالسعر: **${data['price']:.2f}**\n\nهل تريد تأكيد الشراء؟", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(f"القسم/النوع: {data['name']}\nالسعر: **${data['price']:.2f}**\n\nهل تريد تأكيد الشراء؟", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_balance_"))
@@ -1078,36 +1106,4 @@ async def get_otp_callback_fixed(callback: CallbackQuery):
 
     otp_temp_text = await fetch_otp_async(target_num["session"], target_num["api_id"], target_num["api_hash"])
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
-    ])
-    try:
-        await callback.message.edit_text(f"📱 **الرقم:** `{target_num['phone']}`\n\n📥 **حالة الكود المحدثة:**\n{otp_temp_text}", reply_markup=keyboard, parse_mode="Markdown")
-    except Exception:
-        pass
-    await callback.answer("🔄 تم تحديث الكود بنجاح!")
-
-async def fetch_otp_async(session_str, api_id, api_hash):
-    try:
-        client = TelegramClient(StringSession(session_str), api_id, api_hash)
-        await client.connect()
-        messages = await client.get_messages(777000, limit=5)
-        await client.disconnect()
-        
-        for msg in messages:
-            if msg.text:
-                otp_match = re.search(r'\b\d{5,6}\b', msg.text)
-                if otp_match:
-                    return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\n*(ملاحظة: اضغط على زر طلب الكود أعلاه لتحديثه لحظياً)*"
-        return "⏳ لم يصل كود تفعيل جديد بعد. اضغط على زر التحديث."
-    except Exception as e:
-        return f"❌ خطأ في جلب الكود: `{str(e)}`"
-
-# =====================================================================
-# 🏁 [تشغيل البوت]
-# =====================================================================
-async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callb
