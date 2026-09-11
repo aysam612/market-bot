@@ -21,8 +21,8 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 
-DEFAULT_API_ID = 1234567       
-DEFAULT_API_HASH = "your_api_hash_here"  
+DEFAULT_API_ID = 1234567       # استبدلها برقم الـ API ID الخاص بك من my.telegram.org
+DEFAULT_API_HASH = "your_api_hash_here"  # استبدلها بالـ API Hash الخاص بك
 
 DEFAULT_ADMIN_USERNAME = "aaysam"
 DEFAULT_ADMIN_USER_ID = 8863784148
@@ -70,8 +70,6 @@ class States(StatesGroup):
     waiting_for_auto_code = State()
     waiting_for_auto_password = State()
 
-    waiting_for_new_price = State()
-    waiting_for_new_name = State()
     waiting_for_star_price = State()
     waiting_for_ban_id = State()
     waiting_for_unban_id = State()
@@ -119,7 +117,12 @@ async def get_main_keyboard(user_id):
     keyboard_buttons.append([InlineKeyboardButton(text="💬 Support" if lang == 'en' else "💬 الدعم الفني", url=f"https://t.me/{TEXTS['support_username'].replace('@', '')}")])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-    text_header = TEXTS["welcome_en"].format(user_id=user_id, balance=balance) if lang == 'en' else TEXTS["welcome_ar"].format(user_id=user_id, balance=balance)
+    
+    if lang == 'en':
+        text_header = TEXTS["welcome_en"].format(user_id=user_id, balance=balance)
+    else:
+        text_header = TEXTS["welcome_ar"].format(user_id=user_id, balance=balance)
+        
     return text_header, keyboard
 
 @dp.callback_query(F.data == "toggle_lang")
@@ -211,6 +214,7 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
     except Exception:
         pass
     await callback.answer()
+
 # =====================================================================
 # 👑 [لوحة التحكم والخدمات الإضافية]
 # =====================================================================
@@ -232,7 +236,6 @@ async def admin_panel_handler(event, state: FSMContext = None):
         
     current_star_price = CONFIG_DATA.get("star_price", 0.01)
 
-    # 🛠️ [مكان إضافة أو حذف الأزرار في لوحة التحكم]:
     builder = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ إضافة رقم تليجرام جديد", callback_data="admin_auto_add_num")],
         [InlineKeyboardButton(text="✏️ إدارة الأرقام الحالية", callback_data="admin_manage_nums")],
@@ -242,7 +245,6 @@ async def admin_panel_handler(event, state: FSMContext = None):
         [InlineKeyboardButton(text="🎯 تعيين رصيد محدد", callback_data="admin_set_balance"), InlineKeyboardButton(text="🔍 الاستعلام عن مستخدم", callback_data="admin_check_user")],
         [InlineKeyboardButton(text=f"⭐ تعديل سعر النجمة ({current_star_price})", callback_data="admin_change_star_price")],
         [InlineKeyboardButton(text="🚫 حظر مستخدم", callback_data="admin_ban_user"), InlineKeyboardButton(text="✅ رفع حظر", callback_data="admin_unban_user")],
-        # أضف أو احذف أزرارك هنا بكل سهولة
         [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
     ])
     
@@ -258,7 +260,6 @@ async def admin_panel_handler(event, state: FSMContext = None):
     else:
         await message.answer(text, reply_markup=builder, parse_mode="Markdown")
 
-# حساب المستخدم
 @dp.callback_query(F.data == "my_account")
 async def my_account_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -278,7 +279,6 @@ async def my_account_handler(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
-# الهدية اليومية
 @dp.callback_query(F.data == "claim_bonus")
 async def claim_bonus_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -305,7 +305,6 @@ async def claim_bonus_handler(callback: CallbackQuery):
     except Exception:
         pass
 
-# رابط الإحالة
 @dp.callback_query(F.data == "ref_menu")
 async def ref_menu_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -322,7 +321,6 @@ async def ref_menu_handler(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
-# تحويل الرصيد
 @dp.callback_query(F.data == "transfer_menu")
 async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_transfer_id)
@@ -383,7 +381,6 @@ async def process_transfer_amount(message: Message, state: FSMContext):
     except Exception:
         pass
 
-# شحن النجوم
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu_handler(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_stars_count)
@@ -440,7 +437,6 @@ async def successful_payment_handler(message: Message):
         except Exception:
             pass
 
-# إحصائيات والتحكم بالمستخدمين والأسعار
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats_handler(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
@@ -484,7 +480,6 @@ async def execute_broadcast(message: Message, state: FSMContext):
             pass
     await message.answer(f"✅ تمت الإذاعة بنجاح لـ `{sent_count}` مستخدم.")
 
-# إدارة وحظر المستخدمين
 @dp.callback_query(F.data == "admin_ban_user")
 async def admin_ban_prompt(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
@@ -531,7 +526,6 @@ async def execute_unban(message: Message, state: FSMContext):
     else:
         await message.answer("❌ المستخدم غير موجود.")
 
-# تعديل سعر النجمة وتعديل الأرصدة
 @dp.callback_query(F.data == "admin_change_star_price")
 async def admin_change_star_price_prompt(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
@@ -689,7 +683,6 @@ async def proc_check_user(message: Message, state: FSMContext):
     )
     await message.answer(text, parse_mode="Markdown")
 
-# نظام إضافة الأرقام بالتليثون (Telethon)
 @dp.callback_query(F.data == "admin_auto_add_num")
 async def admin_auto_add_num(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
@@ -791,7 +784,6 @@ async def proc_auto_password(message: Message, state: FSMContext):
         await state.clear()
         await message.answer(f"❌ خطأ: `{str(e)}`")
 
-# إدارة الأرقام الحالية وحذفها
 @dp.callback_query(F.data == "admin_manage_nums")
 async def admin_manage_nums_handler(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
@@ -818,7 +810,6 @@ async def delete_number_handler(callback: CallbackQuery):
     MEMORY_NUMBERS = [n for n in MEMORY_NUMBERS if n["num_id"] != num_id]
     await callback.answer("✅ تم حذف الرقم بنجاح!", show_alert=True)
     
-    # تحديث القائمة
     if not MEMORY_NUMBERS:
         back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
         await callback.message.edit_text("📭 لا توجد أرقام مضافة حالياً.", reply_markup=back_kb)
@@ -830,7 +821,6 @@ async def delete_number_handler(callback: CallbackQuery):
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
     await callback.message.edit_text("⚙️ اختر الرقم الذي تريد حذفه:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
-# متجر وشراء الأرقام للعملاء
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
     buttons = []
@@ -909,7 +899,9 @@ async def fetch_otp_async(session_str, api_id, api_hash):
     except Exception as e:
         return f"❌ خطأ: `{str(e)}`"
 
-# تشغيل البوت الأساسي
+# =====================================================================
+# 🏁 [تشغيل البوت]
+# =====================================================================
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
