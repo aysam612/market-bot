@@ -19,7 +19,7 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 # 🛠️ [الإعدادات الأساسية]
 # =====================================================================
 
-BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
+BOT_TOKEN = "8674271181:AAH0RGu9L6JLWYQQfca1cfpwYbEsE-echHY"
 TON_WALLET_ADDRESS = "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU"
 
 DEFAULT_ADMIN_USERNAME = "aaysam"
