@@ -1050,7 +1050,7 @@ async def proc_auto_phone(message: Message, state: FSMContext):
         
         await state.update_data(phone=phone, phone_code_hash=sent_code.phone_code_hash, client_session=session_str)
         await state.set_state(States.waiting_for_auto_code)
-        await message.answer("📥 تم إرسال الكود بنجاح، أرسله الآن:")
+        await message.answer("📥 تم إرسال الكود بنجاح، أرسل الآن:")
     except Exception as e:
         await state.clear()
         await message.answer(f"❌ حدث خطأ في البيانات:\n`{str(e)}`\n\nأعد المحاولة من لوحة التحكم.")
