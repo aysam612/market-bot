@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import sqlite3
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -14,24 +15,13 @@ from aiogram.fsm.context import FSMContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
-from motor.motor_asyncio import AsyncIOMotorClient
 
 # =====================================================================
-# 🛠️ [الإعدادات الأساسية وقاعدة البيانات]
+# 🛠️ [الإعدادات الأساسية وقاعدة بيانات SQLite المحلية]
 # =====================================================================
 
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 TON_WALLET_ADDRESS = "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU"
-
-# رابط المونجو الخاص بك
-MONGO_URL = "mongodb+srv://aysamaysam426_db_user:db_password@aysam.ut0hpt5.mongodb.net/?appName=aysam"
-mongo_client = AsyncIOMotorClient(MONGO_URL)
-db = mongo_client["telegram_store_db"]
-
-users_col = db["users"]
-numbers_col = db["numbers"]
-purchases_col = db["purchases"]
-config_col = db["config"]
 
 DEFAULT_ADMIN_USERNAME = "aaysam"
 DEFAULT_ADMIN_USER_ID = 8863784148
@@ -54,6 +44,145 @@ MAIN_SECTIONS = [
     "احتيالي",
     "أرقام تليجرام عادية"
 ]
+
+# إعداد قاعدة البيانات المحلية SQLite
+DB_FILE = "bot_database.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # جدول المستخدمين
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            balance REAL DEFAULT 0.0,
+            language TEXT DEFAULT 'ar',
+            banned INTEGER DEFAULT 0,
+            last_claim TEXT
+        )
+    """)
+    
+    # جدول الأرقام
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS numbers (
+            num_id TEXT PRIMARY KEY,
+            section TEXT,
+            country TEXT,
+            price REAL,
+            phone TEXT,
+            session TEXT,
+            api_id INTEGER,
+            api_hash TEXT
+        )
+    """)
+    
+    # جدول المشتريات
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS purchases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            number_id TEXT,
+            num_data TEXT
+        )
+    """)
+    
+    # جدول الإعدادات
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# دوال مساعدة للتعامل مع SQLite
+def get_config_val(key, default):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM config WHERE key = ?", (key,))
+    row = cursor.fetchone()
+    conn.close()
+    if row is None:
+        return default
+    return row[0]
+
+def set_config_val(key, value):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
+    conn.commit()
+    conn.close()
+
+async def get_config():
+    star_price = float(get_config_val("star_price", 0.01))
+    ton_price = float(get_config_val("ton_price", 1.35))
+    methods_str = get_config_val("payment_methods", "Telegram Stars ⭐, TON 💎")
+    methods = [m.strip() for m in methods_str.split(",")]
+    return {
+        "star_price": star_price,
+        "ton_price": ton_price,
+        "payment_methods": methods
+    }
+
+async def update_config(data: dict):
+    for k, v in data.items():
+        if isinstance(v, list):
+            set_config_val(k, ", ".join(v))
+        else:
+            set_config_val(k, v)
+
+async def get_user(user_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, balance, language, banned, last_claim FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        initial_balance = 10000.02 if user_id == DEFAULT_ADMIN_USER_ID else 0.0
+        cursor.execute(
+            "INSERT INTO users (user_id, balance, language, banned, last_claim) VALUES (?, ?, 'ar', 0, NULL)",
+            (user_id, initial_balance)
+        )
+        conn.commit()
+        user = {
+            "user_id": user_id,
+            "balance": initial_balance,
+            "language": "ar",
+            "banned": False,
+            "last_claim": None
+        }
+    else:
+        user = {
+            "user_id": row[0],
+            "balance": row[1],
+            "language": row[2],
+            "banned": bool(row[3]),
+            "last_claim": datetime.fromisoformat(row[4]) if row[4] else None
+        }
+    conn.close()
+    return user
+
+async def update_user(user_id: int, data: dict):
+    user = await get_user(user_id) # التأكد من وجوده
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    balance = data.get("balance", user["balance"])
+    language = data.get("language", user["language"])
+    banned = 1 if data.get("banned", user["banned"]) else 0
+    last_claim = data.get("last_claim", user["last_claim"])
+    last_claim_str = last_claim.isoformat() if isinstance(last_claim, datetime) else last_claim
+    
+    cursor.execute("""
+        UPDATE users SET balance = ?, language = ?, banned = ?, last_claim = ? WHERE user_id = ?
+    """, (balance, language, banned, last_claim_str, user_id))
+    conn.commit()
+    conn.close()
 
 # =====================================================================
 # 🚀 [تهيئة البوت والحالات]
@@ -95,38 +224,6 @@ class States(StatesGroup):
     waiting_for_set_balance_amount = State()
     waiting_for_check_user_id = State()
     waiting_for_payment_setting = State()
-
-async def get_config():
-    cfg = await config_col.find_one({"_id": "settings"})
-    if not cfg:
-        cfg = {
-            "_id": "settings",
-            "star_price": 0.01,
-            "ton_price": 1.35,
-            "payment_methods": ["Telegram Stars ⭐", "TON 💎"]
-        }
-        await config_col.insert_one(cfg)
-    return cfg
-
-async def update_config(data: dict):
-    await config_col.update_one({"_id": "settings"}, {"$set": data}, upsert=True)
-
-async def get_user(user_id: int):
-    user = await users_col.find_one({"user_id": user_id})
-    if not user:
-        initial_balance = 10000.02 if user_id == DEFAULT_ADMIN_USER_ID else 0.0
-        user = {
-            "user_id": user_id,
-            "balance": initial_balance,
-            "language": "ar",
-            "banned": False,
-            "last_claim": None
-        }
-        await users_col.insert_one(user)
-    return user
-
-async def update_user(user_id: int, data: dict):
-    await users_col.update_one({"user_id": user_id}, {"$set": data}, upsert=True)
 
 async def check_subscription(user_id: int) -> bool:
     if not REQUIRED_CHANNEL:
@@ -376,7 +473,12 @@ async def my_account_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
     user = await get_user(user_id)
     balance = user.get("balance", 0.0)
-    purchased_count = await purchases_col.count_documents({"user_id": user_id})
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM purchases WHERE user_id = ?", (user_id,))
+    purchased_count = cursor.fetchone()[0]
+    conn.close()
     
     text = (
         f"⚡ **معلومات حسابك:**\n\n"
@@ -430,8 +532,13 @@ async def process_transfer_id(message: Message, state: FSMContext):
         await message.answer("❌ يرجى إرسال رقم آي دي (ID) صحيح:")
         return
         
-    target_user = await users_col.find_one({"user_id": target_id})
-    if not target_user:
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (target_id,))
+    target_row = cursor.fetchone()
+    conn.close()
+
+    if not target_row:
         await message.answer("❌ هذا المستخدم غير مسجل في البوت:")
         return
     if target_id == message.from_user.id:
@@ -579,10 +686,18 @@ async def successful_payment_handler(message: Message):
 async def admin_stats_handler(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
-    total_users = await users_col.count_documents({})
-    total_nums = await numbers_col.count_documents({})
-    total_purchases = await purchases_col.count_documents({})
-    banned_users = await users_col.count_documents({"banned": True})
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM users WHERE banned = 1")
+    banned_users = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM numbers")
+    total_nums = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM purchases")
+    total_purchases = cursor.fetchone()[0]
+    conn.close()
     
     text = (
         f"📊 **إحصائيات البوت الشاملة:**\n\n"
@@ -608,10 +723,17 @@ async def admin_broadcast_prompt(callback: CallbackQuery, state: FSMContext):
 async def execute_broadcast(message: Message, state: FSMContext):
     broadcast_text = message.text
     await state.clear()
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    users = cursor.fetchall()
+    conn.close()
+
     sent_count = 0
-    async for user in users_col.find({}):
+    for row in users:
         try:
-            await bot.send_message(user["user_id"], broadcast_text, parse_mode="Markdown")
+            await bot.send_message(row[0], broadcast_text, parse_mode="Markdown")
             sent_count += 1
             await asyncio.sleep(0.05)
         except Exception:
@@ -635,8 +757,15 @@ async def execute_ban(message: Message, state: FSMContext):
         await message.answer("❌ أدخل آي دي صحيح:")
         return
     await state.clear()
-    res = await users_col.update_one({"user_id": uid}, {"$set": {"banned": True}})
-    if res.matched_count > 0:
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET banned = 1 WHERE user_id = ?", (uid,))
+    conn.commit()
+    rows_affected = cursor.rowcount
+    conn.close()
+
+    if rows_affected > 0:
         await message.answer(f"✅ تم حظر المستخدم (`{uid}`) بنجاح.")
     else:
         await message.answer("❌ المستخدم غير موجود في القاعدة.")
@@ -658,8 +787,15 @@ async def execute_unban(message: Message, state: FSMContext):
         await message.answer("❌ أدخل آي دي صحيح:")
         return
     await state.clear()
-    res = await users_col.update_one({"user_id": uid}, {"$set": {"banned": False}})
-    if res.matched_count > 0:
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET banned = 0 WHERE user_id = ?", (uid,))
+    conn.commit()
+    rows_affected = cursor.rowcount
+    conn.close()
+
+    if rows_affected > 0:
         await message.answer(f"✅ تم رفع الحظر عن المستخدم (`{uid}`).")
     else:
         await message.answer("❌ المستخدم غير موجود.")
@@ -748,9 +884,15 @@ async def proc_deduct_balance_amount(message: Message, state: FSMContext):
     data = await state.get_data()
     uid = data["target_user"]
     await state.clear()
-    user = await users_col.find_one({"user_id": uid})
-    if user:
-        new_bal = max(0.0, user.get("balance", 0.0) - amount)
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (uid,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        new_bal = max(0.0, row[0] - amount)
         await update_user(uid, {"balance": new_bal})
         await message.answer(f"✅ تم خصم `${amount:.2f}` من حساب المستخدم (`{uid}`).")
     else:
@@ -806,17 +948,23 @@ async def proc_check_user(message: Message, state: FSMContext):
         await message.answer("❌ أدخل آي دي صحيح:")
         return
     await state.clear()
-    user = await users_col.find_one({"user_id": uid})
-    if not user:
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, balance, language, banned FROM users WHERE user_id = ?", (uid,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
         await message.answer("❌ هذا المستخدم غير مسجل في البوت.")
         return
     
     text = (
         f"👤 **معلومات المستخدم:**\n\n"
-        f"🆔 الآي دي: `{uid}`\n"
-        f"💵 الرصيد: `${user.get('balance', 0.0):.2f}`\n"
-        f"🌐 اللغة: `{user.get('language', 'ar')}`\n"
-        f"🚫 محظور: `{'نعم' if user.get('banned', False) else 'لا'}`"
+        f"🆔 الآي دي: `{row[0]}`\n"
+        f"💵 الرصيد: `${row[1]:.2f}`\n"
+        f"🌐 اللغة: `{row[2]}`\n"
+        f"🚫 محظور: `{'نعم' if row[3] else 'لا'}`"
     )
     await message.answer(text, parse_mode="Markdown")
 
@@ -926,22 +1074,15 @@ async def proc_auto_code(message: Message, state: FSMContext):
         await client.disconnect()
         
         num_id = data["num_id"]
-        await numbers_col.update_one(
-            {"num_id": num_id},
-            {
-                "$set": {
-                    "num_id": num_id,
-                    "section": data["num_section"],
-                    "country": data["country"],
-                    "price": data["num_price"],
-                    "phone": data["phone"],
-                    "session": final_session,
-                    "api_id": data["api_id"],
-                    "api_hash": data["api_hash"]
-                }
-            },
-            upsert=True
-        )
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO numbers (num_id, section, country, price, phone, session, api_id, api_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (num_id, data["num_section"], data["country"], data["num_price"], data["phone"], final_session, data["api_id"], data["api_hash"]))
+        conn.commit()
+        conn.close()
+
         await state.clear()
         await message.answer("✅ تم إضافة الرقم وتفعليه بنجاح ضمن القسم والتفاصيل المحددة!")
     except SessionPasswordNeededError:
@@ -962,22 +1103,15 @@ async def proc_auto_password(message: Message, state: FSMContext):
         await client.disconnect()
         
         num_id = data["num_id"]
-        await numbers_col.update_one(
-            {"num_id": num_id},
-            {
-                "$set": {
-                    "num_id": num_id,
-                    "section": data["num_section"],
-                    "country": data["country"],
-                    "price": data["num_price"],
-                    "phone": data["phone"],
-                    "session": final_session,
-                    "api_id": data["api_id"],
-                    "api_hash": data["api_hash"]
-                }
-            },
-            upsert=True
-        )
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO numbers (num_id, section, country, price, phone, session, api_id, api_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (num_id, data["num_section"], data["country"], data["num_price"], data["phone"], final_session, data["api_id"], data["api_hash"]))
+        conn.commit()
+        conn.close()
+
         await state.clear()
         await message.answer("✅ تم تفعيل الرقم وحفظه بنجاح!")
     except Exception as e:
@@ -989,8 +1123,11 @@ async def admin_manage_nums_handler(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
     
-    numbers_cursor = numbers_col.find({})
-    numbers_list = await numbers_cursor.to_list(length=100)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_id, section, country FROM numbers")
+    numbers_list = cursor.fetchall()
+    conn.close()
     
     if not numbers_list:
         back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
@@ -1000,11 +1137,10 @@ async def admin_manage_nums_handler(callback: CallbackQuery):
 
     buttons = []
     for num in numbers_list:
-        sec = num.get('section', '')
-        cntry = num.get('country', '')
+        num_id, sec, cntry = num[0], num[1], num[2]
         buttons.append([
-            InlineKeyboardButton(text=f"🗑 [{sec}] {cntry}", callback_data=f"del_num_{num['num_id']}"),
-            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num['num_id']}")
+            InlineKeyboardButton(text=f"🗑 [{sec}] {cntry}", callback_data=f"del_num_{num_id}"),
+            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num_id}")
         ])
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
     await callback.message.edit_text("⚙️ **إدارة الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -1039,7 +1175,11 @@ async def proc_edit_price(message: Message, state: FSMContext):
     num_id = data["editing_num_id"]
     new_country = data["new_country"]
     
-    await numbers_col.update_one({"num_id": num_id}, {"$set": {"country": new_country, "price": new_price}})
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE numbers SET country = ?, price = ? WHERE num_id = ?", (new_country, new_price, num_id))
+    conn.commit()
+    conn.close()
             
     await state.clear()
     await message.answer("✅ تم تعديل بيانات الرقم بنجاح!")
@@ -1049,11 +1189,17 @@ async def delete_number_handler(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
     num_id = callback.data.replace("del_num_", "")
-    await numbers_col.delete_one({"num_id": num_id})
-    await callback.answer("✅ تم حذف الرقم بنجاح!", show_alert=True)
     
-    numbers_cursor = numbers_col.find({})
-    numbers_list = await numbers_cursor.to_list(length=100)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM numbers WHERE num_id = ?", (num_id,))
+    conn.commit()
+    
+    cursor.execute("SELECT num_id, section, country FROM numbers")
+    numbers_list = cursor.fetchall()
+    conn.close()
+    
+    await callback.answer("✅ تم حذف الرقم بنجاح!", show_alert=True)
     
     if not numbers_list:
         back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
@@ -1063,8 +1209,8 @@ async def delete_number_handler(callback: CallbackQuery):
     buttons = []
     for num in numbers_list:
         buttons.append([
-            InlineKeyboardButton(text=f"🗑 {num.get('section','')} | {num.get('country','')}", callback_data=f"del_num_{num['num_id']}"),
-            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num['num_id']}")
+            InlineKeyboardButton(text=f"🗑 {num[1]} | {num[2]}", callback_data=f"del_num_{num[0]}"),
+            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num[0]}")
         ])
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
     await callback.message.edit_text("⚙️ **إدارة الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -1075,18 +1221,21 @@ async def delete_number_handler(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
-    numbers_cursor = numbers_col.find({})
-    numbers_list = await numbers_cursor.to_list(length=100)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT section FROM numbers")
+    rows = cursor.fetchall()
+    conn.close()
     
-    if not numbers_list:
+    if not rows:
         back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
         await callback.message.edit_text("📭 عذراً، لا توجد أرقام متاحة للبيع في الوقت الحالي.", reply_markup=back_kb)
         await callback.answer()
         return
 
     active_sections = {}
-    for num in numbers_list:
-        sec = num.get("section")
+    for row in rows:
+        sec = row[0]
         if sec:
             active_sections[sec] = active_sections.get(sec, 0) + 1
 
@@ -1107,8 +1256,12 @@ async def buy_number_menu(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("view_sec_"))
 async def view_section_numbers(callback: CallbackQuery):
     sec_name = callback.data.replace("view_sec_", "")
-    numbers_cursor = numbers_col.find({"section": sec_name})
-    matched_nums = await numbers_cursor.to_list(length=100)
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_id, country, price FROM numbers WHERE section = ?", (sec_name,))
+    matched_nums = cursor.fetchall()
+    conn.close()
     
     if not matched_nums:
         await callback.answer("❌ لا توجد أرقام في هذا القسم حالياً.", show_alert=True)
@@ -1116,12 +1269,11 @@ async def view_section_numbers(callback: CallbackQuery):
 
     buttons = []
     for num in matched_nums:
-        details = num.get("country", "رقم مميز")
-        price = num["price"]
+        num_id, details, price = num[0], num[1], num[2]
         buttons.append([
             InlineKeyboardButton(
                 text=f"{details} | 💵 ${price:.2f}", 
-                callback_data=f"buy_num_{num['num_id']}"
+                callback_data=f"buy_num_{num_id}"
             )
         ])
         
@@ -1132,14 +1284,18 @@ async def view_section_numbers(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("buy_num_"))
 async def buy_number_details(callback: CallbackQuery):
     num_id = callback.data.replace("buy_num_", "")
-    data = await numbers_col.find_one({"num_id": num_id})
-    if not data:
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_id, section, country, price FROM numbers WHERE num_id = ?", (num_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
         await callback.answer("❌ هذا الرقم غير متوفر حالياً.", show_alert=True)
         return
         
-    sec = data.get("section", "")
-    details = data.get("country", "")
-    price = data["price"]
+    sec, details, price = row[1], row[2], row[3]
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"💳 تأكيد الشراء مقابل ${price:.2f}", callback_data=f"confirm_buy_{num_id}")],
@@ -1161,21 +1317,42 @@ async def confirm_buy_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
     num_id = callback.data.replace("confirm_buy_", "")
     
-    data = await numbers_col.find_one({"num_id": num_id})
-    if not data:
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_id, section, country, price, phone, session, api_id, api_hash FROM numbers WHERE num_id = ?", (num_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
         await callback.answer("❌ عذراً، لقد سبقك شخص آخر في شراء هذا الرقم!", show_alert=True)
         return
+
+    data = {
+        "num_id": row[0],
+        "section": row[1],
+        "country": row[2],
+        "price": row[3],
+        "phone": row[4],
+        "session": row[5],
+        "api_id": row[6],
+        "api_hash": row[7]
+    }
 
     user = await get_user(user_id)
     balance = user.get("balance", 0.0)
     if balance < data['price']:
+        conn.close()
         await callback.answer("❌ رصيدك غير كافي لشراء هذا الرقم!", show_alert=True)
         return
         
     await update_user(user_id, {"balance": balance - data['price']})
-    await numbers_col.delete_one({"num_id": num_id})
     
-    await purchases_col.insert_one({"user_id": user_id, "number_id": num_id, "num_data": data})
+    # حذف الرقم من المتاحة وإضافته للمشتريات
+    cursor.execute("DELETE FROM numbers WHERE num_id = ?", (num_id,))
+    import json
+    cursor.execute("INSERT INTO purchases (user_id, number_id, num_data) VALUES (?, ?, ?)", (user_id, num_id, json.dumps(data)))
+    conn.commit()
+    conn.close()
     
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
     
@@ -1206,12 +1383,18 @@ async def refresh_otp_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
     num_id = callback.data.replace("get_otp_", "")
     
-    purchase = await purchases_col.find_one({"user_id": user_id, "number_id": num_id})
-    if not purchase:
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_data FROM purchases WHERE user_id = ? AND number_id = ?", (user_id, num_id))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
         await callback.answer("❌ لم يتم العثور على تفاصيل هذا الرقم في سجلك.", show_alert=True)
         return
         
-    data = purchase["num_data"]
+    import json
+    data = json.loads(row[0])
     await callback.answer("🔄 جاري فحص رسائل تليجرام لجلب الكود الجديد...")
     
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
@@ -1230,7 +1413,7 @@ async def refresh_otp_handler(callback: CallbackQuery):
 # =====================================================================
 
 async def main():
-    print("🤖 البوت يعمل الآن بكفاءة مع MongoDB...")
+    print("🤖 البوت يعمل الآن بكفاءة مع SQLite (محلي)...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
