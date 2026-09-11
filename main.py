@@ -119,7 +119,7 @@ async def get_main_keyboard(user_id):
         [InlineKeyboardButton(text="🛒 Buy Numbers Store" if lang == 'en' else "🛒 متجر الأرقام", callback_data="buy_number_menu")],
         [InlineKeyboardButton(text="⚡ My Account" if lang == 'en' else "⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 Daily Bonus" if lang == 'en' else "🎁 هدية يومية ($0.01)", callback_data="claim_bonus")],
         [InlineKeyboardButton(text="💳 Recharge Balance & Pay" if lang == 'en' else "💳 شحن الرصيد وطرق الدفع", callback_data="recharge_menu")],
-        [InlineKeyboardButton(text="🤝 Ref Link" if lang == 'en' else "🤝 رابط إحالة", callback_data="ref_menu"), InlineKeyboardButton(text="💳 Transfer" if lang == 'en' else "💳 تحويل رصيد", callback_data="transfer_menu")],
+        [InlineKeyboardButton(text="💳 Transfer" if lang == 'en' else "💳 تحويل رصيد", callback_data="transfer_menu")],
     ]
     
     for btn in CUSTOM_BUTTONS:
@@ -409,23 +409,6 @@ async def claim_bonus_handler(callback: CallbackQuery):
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     except Exception:
         pass
-
-@dp.callback_query(F.data == "ref_menu")
-async def ref_menu_handler(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    bot_info = await bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
-    text = (
-        f"🤝 **نظام الإحالة والأصدقاء:**\n\n"
-        f"شارك رابطك مع أصدقائك واحصل على `{BONUS_AMOUNT}$` لكل شخص يدخل عن طريقك!\n"
-        f"*(ملاحظة: البوت محمي ضد الإحالات الوهمية أو الدخول المتكرر من نفس الحسابات الفرعية)*\n\n"
-        f"🔗 رابطك الخاص:\n`{ref_link}`"
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
-    ])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    await callback.answer()
 
 @dp.callback_query(F.data == "transfer_menu")
 async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
@@ -839,7 +822,6 @@ async def admin_auto_add_num(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
     
-    # عرض الأقسام المحددة للاختيار
     keyboard_buttons = []
     for sec in MAIN_SECTIONS:
         keyboard_buttons.append([InlineKeyboardButton(text=f"📁 {sec}", callback_data=f"sec_{sec}")])
@@ -1073,7 +1055,6 @@ async def buy_number_menu(callback: CallbackQuery):
         await callback.answer()
         return
 
-    # فحص الأقسام التي تحتوي على أرقام فقط (التي ليس فيها أرقام يتم إخفاؤها تلقائياً)
     active_sections = {}
     for num in MEMORY_NUMBERS:
         sec = num.get("section")
@@ -1197,7 +1178,6 @@ async def refresh_otp_handler(callback: CallbackQuery):
     
     purchase = next((p for p in MEMORY_PURCHASES if p["user_id"] == user_id and p["number_id"] == num_id), None)
     if not purchase:
-        # تمت معالجة المشكلة هنا وتصحيح التنبيه بنجاح بدون أي تكرار
         await callback.answer("❌ لم يتم العثور على تفاصيل هذا الرقم في سجلك.", show_alert=True)
         return
         
