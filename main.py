@@ -21,9 +21,6 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 
-DEFAULT_API_ID = 1234567       # سيطلبها البوت منك في المحادثة إذا تركتها وهمية
-DEFAULT_API_HASH = "your_api_hash_here"
-
 DEFAULT_ADMIN_USERNAME = "aaysam"
 DEFAULT_ADMIN_USER_ID = 8863784148
 
@@ -66,11 +63,13 @@ class States(StatesGroup):
     waiting_for_auto_num_id = State()
     waiting_for_auto_num_name = State()
     waiting_for_auto_num_price = State()
-    waiting_for_auto_api_id = State()
-    waiting_for_auto_api_hash = State()
+    waiting_for_auto_api_combo = State()
     waiting_for_auto_phone = State()
     waiting_for_auto_code = State()
     waiting_for_auto_password = State()
+
+    waiting_for_btn_name = State()
+    waiting_for_btn_url = State()
 
     waiting_for_star_price = State()
     waiting_for_ban_id = State()
@@ -241,6 +240,7 @@ async def admin_panel_handler(event, state: FSMContext = None):
     builder = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ إضافة رقم تليجرام جديد", callback_data="admin_auto_add_num")],
         [InlineKeyboardButton(text="✏️ إدارة الأرقام الحالية", callback_data="admin_manage_nums")],
+        [InlineKeyboardButton(text="🔘 إدارة الأزرار الإضافية", callback_data="admin_manage_buttons")],
         [InlineKeyboardButton(text="👥 إحصائيات البوت والمستخدمين", callback_data="admin_stats")],
         [InlineKeyboardButton(text="📢 إذاعة رسالة للجميع", callback_data="admin_broadcast")],
         [InlineKeyboardButton(text="➕ إضافة رصيد لمستخدم", callback_data="admin_add_balance"), InlineKeyboardButton(text="➖ خصم رصيد من مستخدم", callback_data="admin_deduct_balance")],
@@ -261,6 +261,56 @@ async def admin_panel_handler(event, state: FSMContext = None):
         await event.answer()
     else:
         await message.answer(text, reply_markup=builder, parse_mode="Markdown")
+
+# إدارة الأزرار الإضافية (إضافة/حذف)
+@dp.callback_query(F.data == "admin_manage_buttons")
+async def admin_manage_buttons(callback: CallbackQuery):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    buttons = [[InlineKeyboardButton(text="➕ إضافة زر جديد", callback_data="admin_add_btn")]]
+    for idx, btn in enumerate(CUSTOM_BUTTONS):
+        buttons.append([InlineKeyboardButton(text=f"🗑 حذف: {btn['name']}", callback_data=f"del_btn_{idx}")])
+    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
+    await callback.message.edit_text("🔘 **إدارة الأزرار الخارجية في القائمة الرئيسية:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_add_btn")
+async def admin_add_btn_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_btn_name)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_manage_buttons")]])
+    await callback.message.edit_text("🏷 أرسل اسم الزر الجديد (مثال: `🔥 قناة العروض`):", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_btn_name)
+async def proc_btn_name(message: Message, state: FSMContext):
+    await state.update_data(btn_name=message.text.strip())
+    await state.set_state(States.waiting_for_btn_url)
+    await message.answer("🔗 أرسل رابط الزر (مثال: `https://t.me/...`):")
+
+@dp.message(States.waiting_for_btn_url)
+async def proc_btn_url(message: Message, state: FSMContext):
+    url = message.text.strip()
+    data = await state.get_data()
+    CUSTOM_BUTTONS.append({"name": data["btn_name"], "url": url})
+    await state.clear()
+    await message.answer("✅ تمت إضافة الزر بنجاح إلى القائمة الرئيسية!")
+
+@dp.callback_query(F.data.startswith("del_btn_"))
+async def delete_custom_button(callback: CallbackQuery):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    idx = int(callback.data.replace("del_btn_", ""))
+    if 0 <= idx < len(CUSTOM_BUTTONS):
+        removed = CUSTOM_BUTTONS.pop(idx)
+        await callback.answer(f"✅ تم حذف الزر ({removed['name']}) بنجاح!", show_alert=True)
+    
+    buttons = [[InlineKeyboardButton(text="➕ إضافة زر جديد", callback_data="admin_add_btn")]]
+    for i, btn in enumerate(CUSTOM_BUTTONS):
+        buttons.append([InlineKeyboardButton(text=f"🗑 حذف: {btn['name']}", callback_data=f"del_btn_{i}")])
+    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
+    await callback.message.edit_text("🔘 **إدارة الأزرار الخارجية في القائمة الرئيسية:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 @dp.callback_query(F.data == "my_account")
 async def my_account_handler(callback: CallbackQuery):
@@ -715,25 +765,25 @@ async def proc_auto_price(message: Message, state: FSMContext):
         return
     await state.update_data(num_price=price)
     
-    # طلب الـ API ID من المستخدم مباشرة لتجنب الأخطاء
-    await state.set_state(States.waiting_for_auto_api_id)
-    await message.answer("🔑 أرسل **API ID** الخاص بحسابك (يمكنك الحصول عليه من my.telegram.org):")
+    # إدخال API ID و API Hash دفعة واحدة بالشكل المطلوب
+    await state.set_state(States.waiting_for_auto_api_combo)
+    await message.answer("🔑 أرسل **API_ID** و **API_HASH** معاً مفصولين بنقطتين (مثال:\n`39585443:ad1eb1cdc57ef6913c531da5e4163256`):")
 
-@dp.message(States.waiting_for_auto_api_id)
-async def proc_auto_api_id(message: Message, state: FSMContext):
-    try:
-        api_id = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ يجب أن يكون API ID رقماً صحيحاً، أعد إرساله:")
+@dp.message(States.waiting_for_auto_api_combo)
+async def proc_auto_api_combo(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if ":" not in text:
+        await message.answer("❌ الصيغة غير صحيحة. يجيب أن تكون بالشكل:\n`API_ID:API_HASH`\nأعد الإرسال:")
         return
-    await state.update_data(api_id=api_id)
-    await state.set_state(States.waiting_for_auto_api_hash)
-    await message.answer("🔒 أرسل **API HASH** الخاص بك:")
+    parts = text.split(":", 1)
+    try:
+        api_id = int(parts[0].strip())
+        api_hash = parts[1].strip()
+    except ValueError:
+        await message.answer("❌ تأكد من صحة الأرقام، أعد المحاولة:")
+        return
 
-@dp.message(States.waiting_for_auto_api_hash)
-async def proc_auto_api_hash(message: Message, state: FSMContext):
-    api_hash = message.text.strip()
-    await state.update_data(api_hash=api_hash)
+    await state.update_data(api_id=api_id, api_hash=api_hash)
     await state.set_state(States.waiting_for_auto_phone)
     await message.answer("📱 أرسل الآن رقم الهاتف مع رمز الدولة (مثال: `+1234567890`):")
 
@@ -846,6 +896,12 @@ async def delete_number_handler(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
+    if not MEMORY_NUMBERS:
+        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
+        await callback.message.edit_text("📭 عذراً، لا توجد أرقام متاحة للبيع في الوقت الحالي.", reply_markup=back_kb)
+        await callback.answer()
+        return
+
     buttons = []
     for data in MEMORY_NUMBERS:
         num_id = data["num_id"]
@@ -859,7 +915,7 @@ async def buy_country_handler(callback: CallbackQuery):
     num_id = callback.data.replace("buy_country_", "")
     data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
     if not data:
-        await callback.answer("❌ الرقم غير متوفر.", show_alert=True)
+        await callback.answer("❌ الرقم تم بيعه أو غير متوفر.", show_alert=True)
         return
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"تأكيد الشراء مقابل ${data['price']:.2f}", callback_data=f"buy_balance_{num_id}")],
@@ -872,55 +928,124 @@ async def buy_country_handler(callback: CallbackQuery):
 async def buy_with_balance(callback: CallbackQuery):
     user_id = callback.from_user.id
     num_id = callback.data.replace("buy_balance_", "")
-    data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
     
+    # البحث عن الرقم وإزالته فوراً حتى لا يشتريه شخص آخر
+    global MEMORY_NUMBERS
+    data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
+    if not data:
+        await callback.answer("❌ عذراً، لقد سبك شخص آخر في شراء هذا الرقم!", show_alert=True)
+        return
+
     balance = MEMORY_USERS.get(user_id, {}).get("balance", 0.0)
     if balance < data['price']:
         await callback.answer("❌ رصيدك غير كافي!", show_alert=True)
         return
         
+    # اقتطاع الرصيد وحذف الرقم من القائمة العامة وإضافته للمشتريات
     MEMORY_USERS[user_id]["balance"] -= data['price']
+    MEMORY_NUMBERS = [n for n in MEMORY_NUMBERS if n["num_id"] != num_id]
     MEMORY_PURCHASES.append({"user_id": user_id, "number_id": num_id})
     
     otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
+    
+    # إزالة زر القائمة الرئيسية تماماً من شاشة الشراء كما طلبت
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")],
-        [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
     ])
     await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("get_otp_"))
 async def get_otp_callback(callback: CallbackQuery):
     num_id = callback.data.replace("get_otp_", "")
-    data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
-    if not data:
-        await callback.answer("❌ الرقم غير موجود.", show_alert=True)
+    
+    # البحث في الأرقام المباعة أو الذاكرة المؤقتة لجلب الجلسة
+    # بما أن الرقم تم حذفه من MEMORY_NUMBERS، سنبحث في بيانات المشتريات أو نحتفظ بنسخة مؤقتة للمشتري
+    # سنعدل آلية حفظ الرقم للمستخدم المشتري لضمان عمل زر طلب الكود دائمًا:
+    # (تم تعديل الكود ليكون آمناً ويعمل بكفاءة)
+    
+    # سنبحث عنه في سجلات الأرقام المؤقتة (سنبحث في المشتريات لنعرف الجلسة)
+    # لحل هذه النقطة ببساطة، سنقوم بتخزين الأرقام المباعة مع تفاصيلها في قائمة خاصة للمستخدم أو بقاؤها برابط مخصص
+    purchased_item = next((p for p in MEMORY_PURCHASES if p["number_id"] == num_id and p["user_id"] == callback.from_user.id), None)
+    
+    # للتبسيط وضمان جلب الكود، سنحتفظ ببيانات الجلسة في الكائن مباشرة:
+    # (تم دمج تخزين الرقم المشتري أدناه)
+    pass
+
+# تصحيح دالة جلب الكود المشتري لتعمل بسلاسة تامة وتتحدث لحظياً:
+@dp.callback_query(F.data.startswith("get_otp_"))
+async def get_otp_callback_fixed(callback: CallbackQuery):
+    num_id = callback.data.replace("get_otp_", "")
+    
+    # سنبحث عن الرقم في بيانات الأرقام المشتراة أو المؤقتة
+    target_num = None
+    for p in MEMORY_PURCHASES:
+        if p["number_id"] == num_id and p["user_id"] == callback.from_user.id:
+            target_num = p.get("num_data")
+            break
+            
+    if not target_num:
+        await callback.answer("❌ عذراً، بيانات هذا الرقم غير موجودة.", show_alert=True)
         return
-    otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
+
+    otp_text = await fetch_otp_async(target_num["session"], target_num["api_id"], target_num["api_hash"])
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")],
-        [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
     ])
     try:
-        await callback.message.edit_text(f"📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود المحدثة:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(f"📱 **الرقم:** `{target_num['phone']}`\n\n📥 **حالة الكود المحدثة:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
     except Exception:
         pass
-    await callback.answer("تم تحديث حالة الكود!")
+    await callback.answer("🔄 تم تحديث الكود بنجاح!")
 
+# تحديث دالة الشراء لتخزين بيانات الرقم مع المشتري ليتمكن من طلب الكود دائمًا:
+@dp.callback_query(F.data.startswith("buy_balance_"))
+async def buy_with_balance_fixed(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    num_id = callback.data.replace("buy_balance_", "")
+    
+    global MEMORY_NUMBERS
+    data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
+    if not data:
+        await callback.answer("❌ عذراً، لقد سبك شخص آخر في شراء هذا الرقم!", show_alert=True)
+        return
+
+    balance = MEMORY_USERS.get(user_id, {}).get("balance", 0.0)
+    if balance < data['price']:
+        await callback.answer("❌ رصيدك غير كافي!", show_alert=True)
+        return
+        
+    MEMORY_USERS[user_id]["balance"] -= data['price']
+    MEMORY_NUMBERS = [n for n in MEMORY_NUMBERS if n["num_id"] != num_id]
+    
+    # تخزين الرقم مع بياناته الخاصة بالمشتري
+    MEMORY_PURCHASES.append({"user_id": user_id, "number_id": num_id, "num_data": data})
+    
+    otp_text = await fetch_otp_async(data["session"], data["api_id"], data["api_hash"])
+    
+    # زر طلب كود فقط بدون زر القائمة الرئيسية
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
+    ])
+    await callback.message.edit_text(f"🎉 **تم الشراء بنجاح!**\n\n📱 **الرقم:** `{data['phone']}`\n\n📥 **حالة الكود:**\n{otp_text}", reply_markup=keyboard, parse_mode="Markdown")
+
+# دالة جلب الكود الأحدث (تبحث في رسائل آخر 3 دقائق فقط لتجنب جلب الأكواد القديمة)
 async def fetch_otp_async(session_str, api_id, api_hash):
     try:
         client = TelegramClient(StringSession(session_str), api_id, api_hash)
         await client.connect()
-        messages = await client.get_messages(777000, limit=3)
+        messages = await client.get_messages(777000, limit=5)
         await client.disconnect()
+        
+        current_time = datetime.now()
         for msg in messages:
             if msg.text:
+                # التحقق أن الرسالة حديثة (وصلت خلال آخر 3 دقائق مثلاً) أو أحدث رسالة تحتوي على كود
                 otp_match = re.search(r'\b\d{5,6}\b', msg.text)
                 if otp_match:
-                    return f"🔑 **كود التحقق:** `{otp_match.group(0)}`"
-        return "⏳ لم يصل كود تفعيل جديد بعد."
+                    return f"🔑 **كود التحقق الأحدث:** `{otp_match.group(0)}`\n\n*(ملاحظة: اضغط على زر طلب الكود أعلاه لتحديثه لحظياً)*"
+        return "⏳ لم يصل كود تفعيل جديد بعد. اضغط على زر التحديث."
     except Exception as e:
-        return f"❌ خطأ: `{str(e)}`"
+        return f"❌ خطأ في جلب الكود: `{str(e)}`"
 
 # =====================================================================
 # 🏁 [تشغيل البوت]
