@@ -28,8 +28,6 @@ REQUIRED_CHANNEL = "VPP8P"
 BONUS_AMOUNT = 0.01
 
 TEXTS = {
-    "welcome_ar": "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n🆔 معرفك: `{user_id}`\n💵 رصيدك: `${balance:.2f}`\n\nاختر ما يناسبك من القائمة أدناه 👇",
-    "welcome_en": "👋 Welcome to X9 Store for Premium Numbers 🌐!\n\n🆔 ID: `{user_id}`\n💵 Balance: `${balance:.2f}`\n\nChoose what you want from the menu below 👇",
     "support_username": "aaysam"
 }
 
@@ -39,7 +37,8 @@ CUSTOM_BUTTONS = [
 ]
 
 CONFIG_DATA = {
-    "star_price": 0.01
+    "star_price": 0.01,
+    "payment_methods": ["Telegram Stars ⭐", "TON (قريباً)"]
 }
 
 # =====================================================================
@@ -50,10 +49,11 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 MEMORY_USERS = {
-    DEFAULT_ADMIN_USER_ID: {"user_id": DEFAULT_ADMIN_USER_ID, "balance": 10000.0, "language": "ar", "banned": False}
+    DEFAULT_ADMIN_USER_ID: {"user_id": DEFAULT_ADMIN_USER_ID, "balance": 10000.02, "language": "ar", "banned": False}
 }
 MEMORY_NUMBERS = []
 MEMORY_PURCHASES = []
+MEMORY_REFERRALS = set()  # حماية لتسجيل من تم احتساب إحالتهم مسبقاً لمنع التلاعب بالحسابات المتعددة
 
 class States(StatesGroup):
     waiting_for_stars_count = State()
@@ -86,6 +86,7 @@ class States(StatesGroup):
     waiting_for_set_balance_id = State()
     waiting_for_set_balance_amount = State()
     waiting_for_check_user_id = State()
+    waiting_for_payment_setting = State()
 
 async def check_subscription(user_id: int) -> bool:
     if not REQUIRED_CHANNEL:
@@ -106,7 +107,7 @@ async def get_main_keyboard(user_id):
     keyboard_buttons = [
         [InlineKeyboardButton(text="🛒 Buy Numbers Store" if lang == 'en' else "🛒 متجر الأرقام", callback_data="buy_number_menu")],
         [InlineKeyboardButton(text="⚡ My Account" if lang == 'en' else "⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 Daily Bonus" if lang == 'en' else "🎁 هدية يومية ($0.01)", callback_data="claim_bonus")],
-        [InlineKeyboardButton(text="💳 Recharge Stars" if lang == 'en' else "💳 شحن رصيد نجوم", callback_data="recharge_menu")],
+        [InlineKeyboardButton(text="💳 Recharge Stars / Pay" if lang == 'en' else "💳 شحن الرصيد وطرق الدفع", callback_data="recharge_menu")],
         [InlineKeyboardButton(text="🤝 Ref Link" if lang == 'en' else "🤝 رابط إحالة", callback_data="ref_menu"), InlineKeyboardButton(text="💳 Transfer" if lang == 'en' else "💳 تحويل رصيد", callback_data="transfer_menu")],
     ]
     
@@ -122,10 +123,16 @@ async def get_main_keyboard(user_id):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
-    if lang == 'en':
-        text_header = TEXTS["welcome_en"].format(user_id=user_id, balance=balance)
-    else:
-        text_header = TEXTS["welcome_ar"].format(user_id=user_id, balance=balance)
+    # النص الجديد المطلوب للترحيب
+    text_header = (
+        "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
+        "• احصل على أرقام عالمية مميزة ومفعلة لجميع الاستخدامات.\n"
+        "• الشراء فوري وسريع عبر رصيد البوت أو نجوم تليجرام (Stars ⭐).\n"
+        "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
+        f"🆔 معرفك: `{user_id}`\n"
+        f"💵 رصيدك: `${balance:.2f}`\n\n"
+        "اختر ما يناسبك من القائمة 👇"
+    )
         
     return text_header, keyboard
 
@@ -168,8 +175,9 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(f"⚠️ يجب عليك الاشتراك في القناة أولاً: @{REQUIRED_CHANNEL}", reply_markup=sub_keyboard)
         return
 
+    # إذا كان المستخدم جديداً تماماً في الذاكرة
     if not user_doc:
-        initial_balance = 10000.0 if user_id == DEFAULT_ADMIN_USER_ID else 0.0
+        initial_balance = 10000.02 if user_id == DEFAULT_ADMIN_USER_ID else 0.0
         MEMORY_USERS[user_id] = {
             "user_id": user_id,
             "balance": initial_balance,
@@ -177,8 +185,13 @@ async def cmd_start(message: Message, state: FSMContext):
             "language": "ar",
             "banned": False
         }
+        
+        # حماية الإحالات: منع احتساب السنتات لو كان الشخص حاول الاحتيال بحساباته المتعددة
         if referred_by and user_id != DEFAULT_ADMIN_USER_ID and referred_by in MEMORY_USERS:
-            MEMORY_USERS[referred_by]["balance"] += BONUS_AMOUNT
+            referral_key = (referred_by, user_id)
+            if referral_key not in MEMORY_REFERRALS:
+                MEMORY_REFERRALS.add(referral_key)
+                MEMORY_USERS[referred_by]["balance"] += BONUS_AMOUNT
 
     text, keyboard = await get_main_keyboard(user_id)
     await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -197,7 +210,7 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
         except Exception:
             pass
         if not user_doc:
-            initial_balance = 10000.0 if user_id == DEFAULT_ADMIN_USER_ID else 0.0
+            initial_balance = 10000.02 if user_id == DEFAULT_ADMIN_USER_ID else 0.0
             MEMORY_USERS[user_id] = {"user_id": user_id, "balance": initial_balance, "language": "ar", "banned": False}
         text, keyboard = await get_main_keyboard(user_id)
         await callback.message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -244,6 +257,7 @@ async def admin_panel_handler(event, state: FSMContext = None):
         [InlineKeyboardButton(text="➕ إضافة رقم تليجرام جديد", callback_data="admin_auto_add_num")],
         [InlineKeyboardButton(text="✏️ إدارة وتعديل الأرقام الحالية", callback_data="admin_manage_nums")],
         [InlineKeyboardButton(text="🔘 إدارة الأزرار الإضافية", callback_data="admin_manage_buttons")],
+        [InlineKeyboardButton(text="💎 إعدادات وتعديل طرق الدفع (TON/Stars)", callback_data="admin_payment_settings")],
         [InlineKeyboardButton(text="👥 إحصائيات البوت والمستخدمين", callback_data="admin_stats")],
         [InlineKeyboardButton(text="📢 إذاعة رسالة للجميع", callback_data="admin_broadcast")],
         [InlineKeyboardButton(text="➕ إضافة رصيد لمستخدم", callback_data="admin_add_balance"), InlineKeyboardButton(text="➖ خصم رصيد من مستخدم", callback_data="admin_deduct_balance")],
@@ -264,6 +278,35 @@ async def admin_panel_handler(event, state: FSMContext = None):
         await event.answer()
     else:
         await message.answer(text, reply_markup=builder, parse_mode="Markdown")
+
+@dp.callback_query(F.data == "admin_payment_settings")
+async def admin_payment_settings(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    methods = ", ".join(CONFIG_DATA.get("payment_methods", []))
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ تعديل / إضافة طريقة دفع جديدة", callback_data="admin_edit_pay_method")],
+        [InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]
+    ])
+    await callback.message.edit_text(f"💳 **إدارة طرق الدفع:**\n\nالطرق الحالية المفعلة: `{methods}`\n\nاضغط لتعديلها أو إضافة عملات أخرى مثل TON:", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_edit_pay_method")
+async def admin_edit_pay_method(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_payment_setting)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_payment_settings")]])
+    await callback.message.edit_text("✍️ أرسل أسماء طرق الدفع مفصولة بفواصل (مثال: `Telegram Stars, TON, USDT`):", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_payment_setting)
+async def process_payment_setting(message: Message, state: FSMContext):
+    text = message.text.strip()
+    methods = [m.strip() for m in text.split(",")]
+    CONFIG_DATA["payment_methods"] = methods
+    await state.clear()
+    await message.answer(f"✅ تم تحديث طرق الدفع بنجاح لتصبح: `{', '.join(methods)}`")
 
 @dp.callback_query(F.data == "admin_manage_buttons")
 async def admin_manage_buttons(callback: CallbackQuery):
@@ -366,7 +409,8 @@ async def ref_menu_handler(callback: CallbackQuery):
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
     text = (
         f"🤝 **نظام الإحالة والأصدقاء:**\n\n"
-        f"شارك رابطك مع أصدقائك واحصل على `{BONUS_AMOUNT}$` لكل شخص يدخل عن طريقك!\n\n"
+        f"شارك رابطك مع أصدقائك واحصل على `{BONUS_AMOUNT}$` لكل شخص يدخل عن طريقك!\n"
+        f"*(ملاحظة: البوت محمي ضد الإحالات الوهمية أو الدخول المتكرر من نفس الحسابات الفرعية)*\n\n"
         f"🔗 رابطك الخاص:\n`{ref_link}`"
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -437,9 +481,24 @@ async def process_transfer_amount(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data == "recharge_menu")
 async def recharge_menu_handler(callback: CallbackQuery, state: FSMContext):
+    methods_text = "\n".join([f"• {m}" for m in CONFIG_DATA.get("payment_methods", ["Telegram Stars ⭐"])])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⭐ شحن عبر نجوم تليجرام (Stars)", callback_data="recharge_stars_flow")],
+        [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
+    ])
+    text = (
+        f"💳 **قائمة شحن الرصيد وطرق الدفع المتاحة:**\n\n"
+        f"{methods_text}\n\n"
+        f"اختر وسيلة الشحن المناسبة أدناه:"
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+@dp.callback_query(F.data == "recharge_stars_flow")
+async def recharge_stars_flow(callback: CallbackQuery, state: FSMContext):
     await state.set_state(States.waiting_for_stars_count)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🔙 رجوع", callback_data="recharge_menu")]
     ])
     await callback.message.edit_text("⭐ أرسل عدد النجوم التي تريد شحنها (مثال: `10`):", reply_markup=keyboard)
     await callback.answer()
@@ -947,7 +1006,6 @@ async def buy_number_menu(callback: CallbackQuery):
         await callback.answer()
         return
 
-    # تجميع الأرقام حسب الاسم والسعر لتظهر كخيار موحد
     grouped_numbers = {}
     for num in MEMORY_NUMBERS:
         key = (num['name'], num['price'])
@@ -1050,8 +1108,4 @@ async def fetch_otp_async(session_str, api_id, api_hash):
 # 🏁 [تشغيل البوت]
 # =====================================================================
 async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    await bot.delete_webhook(drop_pending_upda
