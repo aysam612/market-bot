@@ -16,11 +16,11 @@ from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# التوكن الجديد الخاص بك
+# التوكن الخاص بك
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 
-# رابط مونجو الخاص بك (استبدل <db_password> بكلمة المرور الحقيقية لحسابك)
-MONGO_URI = "mongodb+srv://aysamaysam426_db_user:db_password@aysam.ut0hpt5.mongodb.net/?appName=aysam"
+# رابط مونجو المحدث بالمعلومات الصحيحة
+MONGO_URI = "mongodb+srv://number:wwsskkppwwsskkpp@aysam.ut0hpt5.mongodb.net/?appName=aysam"
 
 # الاتصال بقاعدة البيانات
 mongo_client = AsyncIOMotorClient(MONGO_URI)
@@ -400,7 +400,7 @@ async def proc_auto_password(message: Message, state: FSMContext):
             upsert=True
         )
         await state.clear()
-        await message.answer("✅ **تم حفظ الرقم وتفعيله في المتجر بنجاح!** 🎉")
+        await message.answer("✅ **تم حفظ الرقم وتفعليه في المتجر بنجاح!** 🎉")
     except Exception as e:
         await state.clear()
         await message.answer(f"❌ كلمة المرور غير صحيحة أو خطأ: `{str(e)}`")
