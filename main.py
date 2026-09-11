@@ -16,10 +16,10 @@ from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# التوكن الخاص بك
+# التوكن الصحيح الخاص بك
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
 
-# رابط مونجو المحدث بالمعلومات الصحيحة
+# رابط مونجو الصحيح والمحدث
 MONGO_URI = "mongodb+srv://number:wwsskkppwwsskkpp@aysam.ut0hpt5.mongodb.net/?appName=aysam"
 
 # الاتصال بقاعدة البيانات
