@@ -1,6 +1,5 @@
-import os
-import re
 import asyncio
+import re
 import sqlite3
 import json
 from datetime import datetime, timedelta
@@ -18,33 +17,11 @@ from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 
 # =====================================================================
-# 🛠️ [الإعدادات الأساسية وقاعدة بيانات SQLite المحلية]
+# 🛠️ [الإعدادات الأساسية وقاعدة البيانات الديناميكية]
 # =====================================================================
 
 BOT_TOKEN = "8896024185:AAF911IAOlt_2BS8HXXVaf8Zrxz3y9MKgkY"
-TON_WALLET_ADDRESS = "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU"
-
-DEFAULT_ADMIN_USERNAME = "aaysam"
 DEFAULT_ADMIN_USER_ID = 8863784148
-
-REQUIRED_CHANNEL = "VPP8P"
-BONUS_AMOUNT = 0.01
-
-TEXTS = {
-    "support_username": "aaysam"
-}
-
-CUSTOM_BUTTONS = [
-    {"name": "💬 قناة التليجرام", "url": "https://t.me/VPP8P"},
-    {"name": "🔥 جروب الدعم", "url": "https://t.me/aaysam"}
-]
-
-MAIN_SECTIONS = [
-    "شراء حساب جاهز",
-    "إنشاء قديم",
-    "احتيالي",
-    "أرقام تليجرام عادية"
-]
 
 DB_FILE = "bot_database.db"
 
@@ -52,6 +29,7 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
+    # جدول المستخدمين
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -62,6 +40,7 @@ def init_db():
         )
     """)
     
+    # جدول الأرقام
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS numbers (
             num_id TEXT PRIMARY KEY,
@@ -75,6 +54,7 @@ def init_db():
         )
     """)
     
+    # جدول المشتريات
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS purchases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,27 +64,64 @@ def init_db():
         )
     """)
     
+    # جدول الإعدادات العامة (ديناميكي بالكامل للتعديل من لوحة التحكم)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS config (
             key TEXT PRIMARY KEY,
             value TEXT
         )
     """)
+
+    # جدول الأزرار المخصصة الإضافية
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS custom_buttons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            url TEXT
+        )
+    """)
+
+    # جدول أقسام المتجر الديناميكية
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS shop_sections (
+            name TEXT PRIMARY KEY
+        )
+    """)
     
+    conn.commit()
+    
+    # تعيين القيم الافتراضية إذا كانت فارغة
+    defaults = {
+        "welcome_message": "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n• احصل على أرقام عالمية مميزة ومفعلة لجميع الاستخدامات.\n• الشراء فوري وسريع عبر رصيد البوت أو نجوم تليجرام (Stars ⭐).\n• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\nاختر ما يناسبك من القائمة 👇",
+        "support_username": "aaysam",
+        "required_channel": "VPP8P",
+        "ton_wallet": "UQAGJ8uRcdJAq-FxA7Zh_TanaT_0kn2ptxnoPSfzECS9Q2ZU",
+        "star_price": "0.01",
+        "ton_price": "1.35",
+        "bonus_amount": "0.01"
+    }
+    
+    for k, v in defaults.items():
+        cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)", (k, v))
+
+    # أقسام افتراضية إذا لم تكن موجودة
+    default_sections = ["شراء حساب جاهز", "إنشاء قديم", "احتيالي", "أرقام تليجرام عادية"]
+    for sec in default_sections:
+        cursor.execute("INSERT OR IGNORE INTO shop_sections (name) VALUES (?)", (sec,))
+        
     conn.commit()
     conn.close()
 
 init_db()
 
-def get_config_val(key, default):
+# دوال مساعدة لجلب وتحديث الإعدادات من قاعدة البيانات مباشرة
+def get_config_val(key, default=""):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT value FROM config WHERE key = ?", (key,))
     row = cursor.fetchone()
     conn.close()
-    if row is None:
-        return default
-    return row[0]
+    return row[0] if row else default
 
 def set_config_val(key, value):
     conn = sqlite3.connect(DB_FILE)
@@ -112,24 +129,6 @@ def set_config_val(key, value):
     cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
     conn.commit()
     conn.close()
-
-async def get_config():
-    star_price = float(get_config_val("star_price", 0.01))
-    ton_price = float(get_config_val("ton_price", 1.35))
-    methods_str = get_config_val("payment_methods", "Telegram Stars ⭐, TON 💎")
-    methods = [m.strip() for m in methods_str.split(",")]
-    return {
-        "star_price": star_price,
-        "ton_price": ton_price,
-        "payment_methods": methods
-    }
-
-async def update_config(data: dict):
-    for k, v in data.items():
-        if isinstance(v, list):
-            set_config_val(k, ", ".join(v))
-        else:
-            set_config_val(k, v)
 
 async def get_user(user_id: int):
     conn = sqlite3.connect(DB_FILE)
@@ -144,13 +143,7 @@ async def get_user(user_id: int):
             (user_id, initial_balance)
         )
         conn.commit()
-        user = {
-            "user_id": user_id,
-            "balance": initial_balance,
-            "language": "ar",
-            "banned": False,
-            "last_claim": None
-        }
+        user = {"user_id": user_id, "balance": initial_balance, "language": "ar", "banned": False, "last_claim": None}
     else:
         user = {
             "user_id": row[0],
@@ -166,21 +159,30 @@ async def update_user(user_id: int, data: dict):
     user = await get_user(user_id)
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
     balance = data.get("balance", user["balance"])
     language = data.get("language", user["language"])
     banned = 1 if data.get("banned", user["banned"]) else 0
     last_claim = data.get("last_claim", user["last_claim"])
     last_claim_str = last_claim.isoformat() if isinstance(last_claim, datetime) else last_claim
     
-    cursor.execute("""
-        UPDATE users SET balance = ?, language = ?, banned = ?, last_claim = ? WHERE user_id = ?
-    """, (balance, language, banned, last_claim_str, user_id))
+    cursor.execute("UPDATE users SET balance = ?, language = ?, banned = ?, last_claim = ? WHERE user_id = ?", (balance, language, banned, last_claim_str, user_id))
     conn.commit()
     conn.close()
 
+async def check_subscription(user_id: int) -> bool:
+    req_chan = get_config_val("required_channel", "")
+    if not req_chan:
+        return True
+    try:
+        member = await bot.get_chat_member(chat_id=f"@{req_chan}", user_id=user_id)
+        if member.status in ["member", "administrator", "creator"]:
+            return True
+    except Exception:
+        pass
+    return False
+
 # =====================================================================
-# 🚀 [تهيئة البوت والحالات]
+# 🚀 [تهيئة البوت والحالات الفئوية FSM]
 # =====================================================================
 
 bot = Bot(token=BOT_TOKEN)
@@ -188,7 +190,6 @@ dp = Dispatcher(storage=MemoryStorage())
 
 class States(StatesGroup):
     waiting_for_stars_count = State()
-    waiting_for_ton_amount = State()
     waiting_for_transfer_id = State()
     waiting_for_transfer_amount = State()
     
@@ -206,10 +207,16 @@ class States(StatesGroup):
     waiting_for_btn_name = State()
     waiting_for_btn_url = State()
 
+    waiting_for_new_section = State()
+    waiting_for_edit_welcome = State()
+    waiting_for_edit_support = State()
+    waiting_for_edit_channel = State()
+    waiting_for_edit_wallet = State()
     waiting_for_star_price = State()
+    waiting_for_ton_price = State()
+
     waiting_for_ban_id = State()
     waiting_for_unban_id = State()
-    
     waiting_for_broadcast_msg = State()
     waiting_for_add_balance_id = State()
     waiting_for_add_balance_amount = State()
@@ -218,18 +225,6 @@ class States(StatesGroup):
     waiting_for_set_balance_id = State()
     waiting_for_set_balance_amount = State()
     waiting_for_check_user_id = State()
-    waiting_for_payment_setting = State()
-
-async def check_subscription(user_id: int) -> bool:
-    if not REQUIRED_CHANNEL:
-        return True
-    try:
-        member = await bot.get_chat_member(chat_id=f"@{REQUIRED_CHANNEL}", user_id=user_id)
-        if member.status in ["member", "administrator", "creator"]:
-            return True
-    except Exception:
-        pass
-    return False
 
 async def get_main_keyboard(user_id):
     user = await get_user(user_id)
@@ -238,28 +233,34 @@ async def get_main_keyboard(user_id):
     
     keyboard_buttons = [
         [InlineKeyboardButton(text="🛒 Buy Numbers Store" if lang == 'en' else "🛒 متجر الأرقام", callback_data="buy_number_menu")],
-        [InlineKeyboardButton(text="⚡ My Account" if lang == 'en' else "⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 Daily Bonus" if lang == 'en' else "🎁 هدية يومية ($0.01)", callback_data="claim_bonus")],
+        [InlineKeyboardButton(text="⚡ My Account" if lang == 'en' else "⚡ حسابي", callback_data="my_account"), InlineKeyboardButton(text="🎁 Daily Bonus" if lang == 'en' else "🎁 هدية يومية", callback_data="claim_bonus")],
         [InlineKeyboardButton(text="💳 Recharge Balance & Pay" if lang == 'en' else "💳 شحن الرصيد وطرق الدفع", callback_data="recharge_menu")],
         [InlineKeyboardButton(text="💳 Transfer" if lang == 'en' else "💳 تحويل رصيد", callback_data="transfer_menu")],
     ]
     
-    for btn in CUSTOM_BUTTONS:
-        keyboard_buttons.append([InlineKeyboardButton(text=btn["name"], url=btn["url"])])
+    # جلب الأزرار المخصصة المضافة ديناميكياً من لوحة التحكم
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, url FROM custom_buttons")
+    custom_btns = cursor.fetchall()
+    conn.close()
+    
+    for name, url in custom_btns:
+        keyboard_buttons.append([InlineKeyboardButton(text=name, url=url)])
         
     keyboard_buttons.append([InlineKeyboardButton(text="🌐 English" if lang == 'ar' else "🌐 العربية", callback_data="toggle_lang")])
     
     if user_id == DEFAULT_ADMIN_USER_ID:
         keyboard_buttons.append([InlineKeyboardButton(text="🛠 لوحة التحكم الشاملة (Admin Panel)", callback_data="admin_panel_main")])
         
-    keyboard_buttons.append([InlineKeyboardButton(text="💬 Support" if lang == 'en' else "💬 الدعم الفني", url=f"https://t.me/{TEXTS['support_username'].replace('@', '')}")])
+    support_user = get_config_val("support_username", "aaysam")
+    keyboard_buttons.append([InlineKeyboardButton(text="💬 Support" if lang == 'en' else "💬 الدعم الفني", url=f"https://t.me/{support_user.replace('@', '')}")])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
+    welcome_template = get_config_val("welcome_message", "أهلاً بك في المتجر")
     text_header = (
-        "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
-        "• احصل على أرقام عالمية مميزة ومفعلة لجميع الاستخدامات.\n"
-        "• الشراء فوري وسريع عبر رصيد البوت أو نجوم تليجرام (Stars ⭐).\n"
-        "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
+        f"{welcome_template}\n\n"
         f"🆔 معرفك: `{user_id}`\n"
         f"💵 رصيدك: `${balance:.2f}`\n\n"
         "اختر ما يناسبك من القائمة 👇"
@@ -284,18 +285,18 @@ async def toggle_lang_callback(callback: CallbackQuery):
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
-    
     user_doc = await get_user(user_id)
     if user_doc.get("banned", False):
         await message.answer("❌ عذراً، لقد تم حظرك من استخدام هذا البوت.")
         return
 
-    if not await check_subscription(user_id):
+    req_chan = get_config_val("required_channel", "")
+    if req_chan and not await check_subscription(user_id):
         sub_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📢 اشترك في القناة", url=f"https://t.me/{REQUIRED_CHANNEL}")],
+            [InlineKeyboardButton(text="📢 اشترك في القناة", url=f"https://t.me/{req_chan}")],
             [InlineKeyboardButton(text="🔄 تحقق من الاشتراك", callback_data="check_sub")]
         ])
-        await message.answer(f"⚠️ يجب عليك الاشتراك في القناة أولاً: @{REQUIRED_CHANNEL}", reply_markup=sub_keyboard)
+        await message.answer(f"⚠️ يجب عليك الاشتراك في القناة أولاً: @{req_chan}", reply_markup=sub_keyboard)
         return
 
     text, keyboard = await get_main_keyboard(user_id)
@@ -304,11 +305,6 @@ async def cmd_start(message: Message, state: FSMContext):
 @dp.callback_query(F.data == "check_sub")
 async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
-    user_doc = await get_user(user_id)
-    if user_doc.get("banned", False):
-        await callback.answer("❌ أنت محظور من استخدام البوت.", show_alert=True)
-        return
-
     if await check_subscription(user_id):
         try:
             await callback.message.delete()
@@ -323,10 +319,6 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
 async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = callback.from_user.id
-    user_doc = await get_user(user_id)
-    if user_doc.get("banned", False):
-        await callback.answer("❌ أنت محظور.", show_alert=True)
-        return
     text, keyboard = await get_main_keyboard(user_id)
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -335,7 +327,7 @@ async def main_menu_callback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 # =====================================================================
-# 👑 [لوحة التحكم والخدمات الإضافية]
+# 👑 [لوحة التحكم الديناميكية بالكامل - تحكم بكل شيء من التليجرام]
 # =====================================================================
 
 @dp.callback_query(F.data == "admin_panel_main")
@@ -353,27 +345,25 @@ async def admin_panel_handler(event, state: FSMContext = None):
             await message.answer("عذراً، هذه اللوحة مخصصة لمالك البوت فقط! ❌")
         return
         
-    config = await get_config()
-    current_star_price = config.get("star_price", 0.01)
+    star_price = get_config_val("star_price", "0.01")
 
     builder = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ إضافة رقم تليجرام جديد", callback_data="admin_auto_add_num")],
-        [InlineKeyboardButton(text="✏️ إدارة وتعديل الأرقام الحالية", callback_data="admin_manage_nums")],
-        [InlineKeyboardButton(text="🔘 إدارة الأزرار الإضافية", callback_data="admin_manage_buttons")],
-        [InlineKeyboardButton(text="💎 إعدادات وتعديل طرق الدفع (TON/Stars)", callback_data="admin_payment_settings")],
-        [InlineKeyboardButton(text="👥 إحصائيات البوت والمستخدمين", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="📢 إذاعة رسالة للجميع", callback_data="admin_broadcast")],
-        [InlineKeyboardButton(text="➕ إضافة رصيد لمستخدم", callback_data="admin_add_balance"), InlineKeyboardButton(text="➖ خصم رصيد من مستخدم", callback_data="admin_deduct_balance")],
-        [InlineKeyboardButton(text="🎯 تعيين رصيد محدد", callback_data="admin_set_balance"), InlineKeyboardButton(text="🔍 الاستعلام عن مستخدم", callback_data="admin_check_user")],
-        [InlineKeyboardButton(text=f"⭐ تعديل سعر النجمة ({current_star_price})", callback_data="admin_change_star_price")],
+        [InlineKeyboardButton(text="✏️ إدارة وتعديل الأرقام", callback_data="admin_manage_nums"), InlineKeyboardButton(text="📁 إدارة أقسام المتجر", callback_data="admin_manage_sections")],
+        [InlineKeyboardButton(text="🔘 إدارة الأزرار الخارجية", callback_data="admin_manage_buttons")],
+        [InlineKeyboardButton(text="⚙️ تعديل النصوص والروابط العامة", callback_data="admin_edit_texts_menu")],
+        [InlineKeyboardButton(text="👥 إحصائيات البوت", callback_data="admin_stats"), InlineKeyboardButton(text="📢 إذاعة رسالة", callback_data="admin_broadcast")],
+        [InlineKeyboardButton(text="➕ إضافة رصيد", callback_data="admin_add_balance"), InlineKeyboardButton(text="➖ خصم رصيد", callback_data="admin_deduct_balance")],
+        [InlineKeyboardButton(text="🎯 تعيين رصيد", callback_data="admin_set_balance"), InlineKeyboardButton(text="🔍 بحث مستخدم", callback_data="admin_check_user")],
+        [InlineKeyboardButton(text=f"⭐ تعديل سعر النجمة ({star_price})", callback_data="admin_change_star_price")],
         [InlineKeyboardButton(text="🚫 حظر مستخدم", callback_data="admin_ban_user"), InlineKeyboardButton(text="✅ رفع حظر", callback_data="admin_unban_user")],
         [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="main_menu")]
     ])
     
     text = (
-        f"🛠 **لوحة التحكم الشاملة والمتقدمة:**\n"
-        f"👤 المالك: `{DEFAULT_ADMIN_USERNAME}` (`{DEFAULT_ADMIN_USER_ID}`)\n\n"
-        f"اختر العملية التي تريد تنفيذها من القائمة أدناه:"
+        f"🛠 **لوحة التحكم الشاملة والديناميكية:**\n"
+        f"👤 كل الإعدادات والأزرار قابلة للتعديل من هنا مباشرة دون أي تعديل برمجي!\n\n"
+        f"اختر العملية التي تريد تنفيذها:"
     )
     
     if isinstance(event, CallbackQuery):
@@ -382,43 +372,131 @@ async def admin_panel_handler(event, state: FSMContext = None):
     else:
         await message.answer(text, reply_markup=builder, parse_mode="Markdown")
 
-@dp.callback_query(F.data == "admin_payment_settings")
-async def admin_payment_settings(callback: CallbackQuery, state: FSMContext):
+# 1. إدارة الأقسام ديناميكياً
+@dp.callback_query(F.data == "admin_manage_sections")
+async def admin_manage_sections(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
-    config = await get_config()
-    methods = ", ".join(config.get("payment_methods", []))
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✏️ تعديل / إضافة طريقة دفع جديدة", callback_data="admin_edit_pay_method")],
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM shop_sections")
+    sections = cursor.fetchall()
+    conn.close()
+
+    buttons = [[InlineKeyboardButton(text="➕ إضافة قسم جديد", callback_data="admin_add_section")]]
+    for sec in sections:
+        buttons.append([InlineKeyboardButton(text=f"🗑 حذف قسم: {sec[0]}", callback_data=f"del_sec_{sec[0]}")])
+    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
+    
+    await callback.message.edit_text("📁 **إدارة أقسام المتجر:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_add_section")
+async def admin_add_section_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_new_section)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_manage_sections")]])
+    await callback.message.edit_text("📁 أرسل اسم القسم الجديد:", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_new_section)
+async def process_new_section(message: Message, state: FSMContext):
+    sec_name = message.text.strip()
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO shop_sections (name) VALUES (?)", (sec_name,))
+    conn.commit()
+    conn.close()
+    await state.clear()
+    await message.answer(f"✅ تمت إضافة القسم (`{sec_name}`) بنجاح!")
+
+@dp.callback_query(F.data.startswith("del_sec_"))
+async def delete_shop_section(callback: CallbackQuery):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    sec_name = callback.data.replace("del_sec_", "")
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM shop_sections WHERE name = ?", (sec_name,))
+    conn.commit()
+    conn.close()
+    await callback.answer(f"✅ تم حذف القسم ({sec_name}) بنجاح!", show_alert=True)
+    await admin_manage_sections(callback)
+
+# 2. تعديل النصوص والروابط العامة (رسالة الترحيب، الدعم، القناة، المحفظة)
+@dp.callback_query(F.data == "admin_edit_texts_menu")
+async def admin_edit_texts_menu(callback: CallbackQuery):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ تعديل رسالة الترحيب", callback_data="edit_txt_welcome")],
+        [InlineKeyboardButton(text="💬 تعديل يوزر الدعم الفني", callback_data="edit_txt_support")],
+        [InlineKeyboardButton(text="📢 تعديل قناة الإجبار", callback_data="edit_txt_channel")],
+        [InlineKeyboardButton(text="💎 تعديل محفظة TON", callback_data="edit_txt_wallet")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]
     ])
-    await callback.message.edit_text(f"💳 **إدارة طرق الدفع:**\n\nالطرق الحالية المفعلة: `{methods}`\n\nعنوان محفظة التون المربوط:\n`{TON_WALLET_ADDRESS}`", reply_markup=back_kb, parse_mode="Markdown")
+    await callback.message.edit_text("⚙️ **تعديل النصوص والإعدادات العامة:**", reply_markup=keyboard)
     await callback.answer()
 
-@dp.callback_query(F.data == "admin_edit_pay_method")
-async def admin_edit_pay_method(callback: CallbackQuery, state: FSMContext):
+@dp.callback_query(F.data.startswith("edit_txt_"))
+async def edit_specific_text(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
-    await state.set_state(States.waiting_for_payment_setting)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_payment_settings")]])
-    await callback.message.edit_text("✍️ أرسل أسماء طرق الدفع مفصولة بفواصل (مثال: `Telegram Stars, TON, USDT`):", reply_markup=back_kb)
+    action = callback.data.replace("edit_txt_", "")
+    
+    if action == "welcome":
+        await state.set_state(States.waiting_for_edit_welcome)
+        await callback.message.edit_text("✍️ أرسل نص رسالة الترحيب الجديدة:")
+    elif action == "support":
+        await state.set_state(States.waiting_for_edit_support)
+        await callback.message.edit_text("✍️ أرسل يوزر الدعم الجديد (بدون @):")
+    elif action == "channel":
+        await state.set_state(States.waiting_for_edit_channel)
+        await callback.message.edit_text("✍️ أرسل معرف القناة الإجبارية الجديد (بدون @):")
+    elif action == "wallet":
+        await state.set_state(States.waiting_for_edit_wallet)
+        await callback.message.edit_text("✍️ أرسل عنوان محفظة TON الجديد:")
     await callback.answer()
 
-@dp.message(States.waiting_for_payment_setting)
-async def process_payment_setting(message: Message, state: FSMContext):
-    text = message.text.strip()
-    methods = [m.strip() for m in text.split(",")]
-    await update_config({"payment_methods": methods})
+@dp.message(States.waiting_for_edit_welcome)
+async def save_welcome(message: Message, state: FSMContext):
+    set_config_val("welcome_message", message.text)
     await state.clear()
-    await message.answer(f"✅ تم تحديث طرق الدفع بنجاح لتصبح: `{', '.join(methods)}`")
+    await message.answer("✅ تم تحديث رسالة الترحيب بنجاح!")
 
+@dp.message(States.waiting_for_edit_support)
+async def save_support(message: Message, state: FSMContext):
+    set_config_val("support_username", message.text.strip().replace("@", ""))
+    await state.clear()
+    await message.answer("✅ تم تحديث يوزر الدعم بنجاح!")
+
+@dp.message(States.waiting_for_edit_channel)
+async def save_channel(message: Message, state: FSMContext):
+    set_config_val("required_channel", message.text.strip().replace("@", ""))
+    await state.clear()
+    await message.answer("✅ تم تحديث القناة الإجبارية بنجاح!")
+
+@dp.message(States.waiting_for_edit_wallet)
+async def save_wallet(message: Message, state: FSMContext):
+    set_config_val("ton_wallet", message.text.strip())
+    await state.clear()
+    await message.answer("✅ تم تحديث محفظة TON بنجاح!")
+
+# 3. إدارة الأزرار الخارجية المخصصة
 @dp.callback_query(F.data == "admin_manage_buttons")
 async def admin_manage_buttons(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, url FROM custom_buttons")
+    buttons_db = cursor.fetchall()
+    conn.close()
+
     buttons = [[InlineKeyboardButton(text="➕ إضافة زر جديد", callback_data="admin_add_btn")]]
-    for idx, btn in enumerate(CUSTOM_BUTTONS):
-        buttons.append([InlineKeyboardButton(text=f"🗑 حذف: {btn['name']}", callback_data=f"del_btn_{idx}")])
+    for b_id, name, url in buttons_db:
+        buttons.append([InlineKeyboardButton(text=f"🗑 حذف: {name}", callback_data=f"del_db_btn_{b_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
     await callback.message.edit_text("🔘 **إدارة الأزرار الخارجية في القائمة الرئيسية:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
@@ -442,527 +520,29 @@ async def proc_btn_name(message: Message, state: FSMContext):
 async def proc_btn_url(message: Message, state: FSMContext):
     url = message.text.strip()
     data = await state.get_data()
-    CUSTOM_BUTTONS.append({"name": data["btn_name"], "url": url})
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO custom_buttons (name, url) VALUES (?, ?)", (data["btn_name"], url))
+    conn.commit()
+    conn.close()
     await state.clear()
     await message.answer("✅ تمت إضافة الزر بنجاح إلى القائمة الرئيسية!")
 
-@dp.callback_query(F.data.startswith("del_btn_"))
+@dp.callback_query(F.data.startswith("del_db_btn_"))
 async def delete_custom_button(callback: CallbackQuery):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
-    idx = int(callback.data.replace("del_btn_", ""))
-    if 0 <= idx < len(CUSTOM_BUTTONS):
-        removed = CUSTOM_BUTTONS.pop(idx)
-        await callback.answer(f"✅ تم حذف الزر ({removed['name']}) بنجاح!", show_alert=True)
-    
-    buttons = [[InlineKeyboardButton(text="➕ إضافة زر جديد", callback_data="admin_add_btn")]]
-    for i, btn in enumerate(CUSTOM_BUTTONS):
-        buttons.append([InlineKeyboardButton(text=f"🗑 حذف: {btn['name']}", callback_data=f"del_btn_{i}")])
-    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
-    await callback.message.edit_text("🔘 **إدارة الأزرار الخارجية في القائمة الرئيسية:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-
-@dp.callback_query(F.data == "my_account")
-async def my_account_handler(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    user = await get_user(user_id)
-    balance = user.get("balance", 0.0)
-    
+    b_id = int(callback.data.replace("del_db_btn_", ""))
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM purchases WHERE user_id = ?", (user_id,))
-    purchased_count = cursor.fetchone()[0]
-    conn.close()
-    
-    text = (
-        f"⚡ **معلومات حسابك:**\n\n"
-        f"🆔 المعرف: `{user_id}`\n"
-        f"💵 الرصيد الحالي: `${balance:.2f}`\n"
-        f"🛒 عدد الأرقام المشتراة: `{purchased_count}`"
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
-    ])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    await callback.answer()
-
-@dp.callback_query(F.data == "claim_bonus")
-async def claim_bonus_handler(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    user = await get_user(user_id)
-    
-    now = datetime.utcnow()
-    last_claim = user.get("last_claim")
-    if last_claim and (now - last_claim) < timedelta(hours=24):
-        remaining = timedelta(hours=24) - (now - last_claim)
-        hours, remainder = divmod(int(remaining.total_seconds()), 3600)
-        minutes = remainder // 60
-        await callback.answer(f"⏳ لقد حصلت على الهدية مسبقاً. انتظر {hours} ساعة و {minutes} دقيقة.", show_alert=True)
-        return
-
-    new_balance = user.get("balance", 0.0) + BONUS_AMOUNT
-    await update_user(user_id, {"balance": new_balance, "last_claim": now})
-    await callback.answer("🎁 مبروك! حصلت على هدية بقيمة $0.01 بنجاح.", show_alert=True)
-    text, keyboard = await get_main_keyboard(user_id)
-    try:
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    except Exception:
-        pass
-
-@dp.callback_query(F.data == "transfer_menu")
-async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(States.waiting_for_transfer_id)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
-    ])
-    await callback.message.edit_text("💳 أرسل آي دي (ID) المستخدم الذي تريد التحويل إليه:", reply_markup=keyboard)
-    await callback.answer()
-
-@dp.message(States.waiting_for_transfer_id)
-async def process_transfer_id(message: Message, state: FSMContext):
-    try:
-        target_id = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ يرجى إرسال رقم آي دي (ID) صحيح:")
-        return
-        
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (target_id,))
-    target_row = cursor.fetchone()
-    conn.close()
-
-    if not target_row:
-        await message.answer("❌ هذا المستخدم غير مسجل في البوت:")
-        return
-    if target_id == message.from_user.id:
-        await message.answer("❌ لا يمكنك التحويل لنفسك:")
-        return
-        
-    await state.update_data(transfer_id=target_id)
-    await state.set_state(States.waiting_for_transfer_amount)
-    await message.answer("💵 أرسل المبلغ المراد تحويله بالدولار (مثال: `1.00`):")
-
-@dp.message(States.waiting_for_transfer_amount)
-async def process_transfer_amount(message: Message, state: FSMContext):
-    try:
-        amount = float(message.text.strip().replace("$", ""))
-    except ValueError:
-        await message.answer("❌ أدخل رقماً صحيحاً للمبلغ:")
-        return
-        
-    if amount <= 0:
-        await message.answer("❌ المبلغ يجب أن يكون أكبر من صفر:")
-        return
-        
-    sender_id = message.from_user.id
-    sender_doc = await get_user(sender_id)
-    sender_balance = sender_doc.get("balance", 0.0)
-    if sender_balance < amount:
-        await message.answer("❌ رصيدك غير كافي لإتمام عملية التحويل هذه.")
-        await state.clear()
-        return
-        
-    data = await state.get_data()
-    target_id = data["transfer_id"]
-    target_doc = await get_user(target_id)
-    
-    await update_user(sender_id, {"balance": sender_balance - amount})
-    await update_user(target_id, {"balance": target_doc.get("balance", 0.0) + amount})
-    await state.clear()
-    
-    await message.answer(f"✅ تم تحويل مبلغ `${amount:.2f}` بنجاح إلى المستخدم (`{target_id}`)!")
-    try:
-        await bot.send_message(target_id, f"💰 وصلك تحويل برصيد `${amount:.2f}` من المستخدم (`{sender_id}`).")
-    except Exception:
-        pass
-
-# =====================================================================
-# 💳 [نظام الشحن وطرق الدفع]
-# =====================================================================
-
-@dp.callback_query(F.data == "recharge_menu")
-async def recharge_menu_handler(callback: CallbackQuery, state: FSMContext):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ شحن عبر نجوم تليجرام (Stars)", callback_data="recharge_stars_flow")],
-        [InlineKeyboardButton(text="💎 شحن عبر عملة TON", callback_data="recharge_ton_flow")],
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
-    ])
-    text = (
-        "💳 **قائمة شحن الرصيد وطرق الدفع المتاحة:**\n\n"
-        "• **نجوم تليجرام (Stars):** دفع فوري وآمن داخل التطبيق.\n"
-        "• **عملة TON:** تحويل رقمي مباشر عبر محفظتك.\n\n"
-        "اختر وسيلة الشحن المناسبة أدناه 👇"
-    )
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    await callback.answer()
-
-@dp.callback_query(F.data == "recharge_stars_flow")
-async def recharge_stars_flow(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(States.waiting_for_stars_count)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="recharge_menu")]
-    ])
-    text = (
-        "⭐ **شحن الرصيد عبر نجوم تليجرام:**\n\n"
-        "📌 **ملاحظة هامة:** النجمة الواحدة تساوي سنت واحد (`$0.01`).\n\n"
-        "أرسل الآن عدد النجوم التي تريد شحنها (مثال: `10` أو `100`):"
-    )
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    await callback.answer()
-
-@dp.message(States.waiting_for_stars_count)
-async def process_stars_invoice(message: Message, state: FSMContext):
-    try:
-        count = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ أدخل رقماً صحيحاً لعدد النجوم:")
-        return
-    if count <= 0:
-        await message.answer("❌ العدد يجب أن يكون أكبر من صفر:")
-        return
-        
-    await state.clear()
-    config = await get_config()
-    star_price = config.get("star_price", 0.01)
-    total_price_cents = int(count * star_price * 100)
-    if total_price_cents < 1:
-        total_price_cents = 1
-        
-    prices = [LabeledPrice(label=f"{count} Stars", amount=total_price_cents)]
-    await message.bot.send_invoice(
-        chat_id=message.chat.id,
-        title="شحن رصيد النجوم",
-        description=f"شحن {count} نجمة في رصيدك بالبوت (النجمة = $0.01)",
-        payload=f"stars_pay_{count}",
-        currency="XTR",
-        prices=prices
-    )
-
-@dp.callback_query(F.data == "recharge_ton_flow")
-async def recharge_ton_flow(callback: CallbackQuery, state: FSMContext):
-    config = await get_config()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 رجوع", callback_data="recharge_menu")]
-    ])
-    text = (
-        "💎 **شحن الرصيد عبر عملة TON:**\n\n"
-        "قم بالتحويل إلى عنوان المحفظة أدناه، ثم تواصل مع الدعم الفني أو أرسل إيصال التحويل ليتم شحن رصيدك فوراً:\n\n"
-        f"📌 **عنوان المحفظة:**\n`{TON_WALLET_ADDRESS}`\n\n"
-        f"💡 **سعر التون الواحد التقريبي:** `${config.get('ton_price', 1.35)}`\n\n"
-        "💬 للتأكيد وإضافة الرصيد بعد التحويل، راسل الدعم الفني: "
-        f"[@{TEXTS['support_username']}]"
-    )
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    await callback.answer()
-
-@dp.pre_checkout_query()
-async def pre_checkout_handler(query: PreCheckoutQuery):
-    await query.answer(ok=True)
-
-@dp.message(F.successful_payment)
-async def successful_payment_handler(message: Message):
-    payload = message.successful_payment.invoice_payload
-    if payload.startswith("stars_pay_"):
-        try:
-            count = int(payload.replace("stars_pay_", ""))
-            config = await get_config()
-            star_price = config.get("star_price", 0.01)
-            added_usd = count * star_price
-            user_id = message.from_user.id
-            user = await get_user(user_id)
-            await update_user(user_id, {"balance": user.get("balance", 0.0) + added_usd})
-            await message.answer(f"✅ تم الدفع بنجاح! وإضافة `${added_usd:.2f}` إلى رصيدك.")
-        except Exception:
-            pass
-
-@dp.callback_query(F.data == "admin_stats")
-async def admin_stats_handler(callback: CallbackQuery):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total_users = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM users WHERE banned = 1")
-    banned_users = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM numbers")
-    total_nums = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM purchases")
-    total_purchases = cursor.fetchone()[0]
-    conn.close()
-    
-    text = (
-        f"📊 **إحصائيات البوت الشاملة:**\n\n"
-        f"👥 إجمالي المستخدمين: `{total_users}`\n"
-        f"🚫 عدد المحظورين: `{banned_users}`\n"
-        f"📱 الأرقام المتاحة: `{total_nums}`\n"
-        f"🛒 العمليات المباعة: `{total_purchases}`\n"
-    )
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text(text, reply_markup=back_kb, parse_mode="Markdown")
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_broadcast")
-async def admin_broadcast_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    await state.set_state(States.waiting_for_broadcast_msg)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("📢 أرسل الرسالة المراد إذاعتها لجميع المستخدمين:", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_broadcast_msg)
-async def execute_broadcast(message: Message, state: FSMContext):
-    broadcast_text = message.text
-    await state.clear()
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users")
-    users = cursor.fetchall()
-    conn.close()
-
-    sent_count = 0
-    for row in users:
-        try:
-            await bot.send_message(row[0], broadcast_text, parse_mode="Markdown")
-            sent_count += 1
-            await asyncio.sleep(0.05)
-        except Exception:
-            pass
-    await message.answer(f"✅ تمت الإذاعة بنجاح لـ `{sent_count}` مستخدم.")
-
-@dp.callback_query(F.data == "admin_ban_user")
-async def admin_ban_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    await state.set_state(States.waiting_for_ban_id)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("🚫 أرسل آي دي (ID) المستخدم المراد حظره:", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_ban_id)
-async def execute_ban(message: Message, state: FSMContext):
-    try:
-        uid = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ أدخل آي دي صحيح:")
-        return
-    await state.clear()
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET banned = 1 WHERE user_id = ?", (uid,))
+    cursor.execute("DELETE FROM custom_buttons WHERE id = ?", (b_id,))
     conn.commit()
-    rows_affected = cursor.rowcount
     conn.close()
-
-    if rows_affected > 0:
-        await message.answer(f"✅ تم حظر المستخدم (`{uid}`) بنجاح.")
-    else:
-        await message.answer("❌ المستخدم غير موجود في القاعدة.")
-
-@dp.callback_query(F.data == "admin_unban_user")
-async def admin_unban_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    await state.set_state(States.waiting_for_unban_id)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("✅ أرسل آي دي (ID) المستخدم لرفع الحظر عنه:", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_unban_id)
-async def execute_unban(message: Message, state: FSMContext):
-    try:
-        uid = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ أدخل آي دي صحيح:")
-        return
-    await state.clear()
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET banned = 0 WHERE user_id = ?", (uid,))
-    conn.commit()
-    rows_affected = cursor.rowcount
-    conn.close()
-
-    if rows_affected > 0:
-        await message.answer(f"✅ تم رفع الحظر عن المستخدم (`{uid}`).")
-    else:
-        await message.answer("❌ المستخدم غير موجود.")
-
-@dp.callback_query(F.data == "admin_change_star_price")
-async def admin_change_star_price_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    await state.set_state(States.waiting_for_star_price)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("⭐ أرسل السعر الجديد للنجمة الواحدة بالدولار (مثال: `0.02`):", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_star_price)
-async def execute_change_star_price(message: Message, state: FSMContext):
-    try:
-        new_price = float(message.text.strip().replace("$", ""))
-    except ValueError:
-        await message.answer("❌ أدخل سعراً صحيحاً:")
-        return
-    await update_config({"star_price": new_price})
-    await state.clear()
-    await message.answer(f"✅ تم تعديل سعر النجمة بنجاح إلى: `{new_price}`")
-
-@dp.callback_query(F.data == "admin_add_balance")
-async def admin_add_balance_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    await state.set_state(States.waiting_for_add_balance_id)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("➕ أرسل آي دي (ID) المستخدم لإضافة رصيد له:", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_add_balance_id)
-async def proc_add_balance_id(message: Message, state: FSMContext):
-    try:
-        uid = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ أدخل آي دي صحيح:")
-        return
-    await state.update_data(target_user=uid)
-    await state.set_state(States.waiting_for_add_balance_amount)
-    await message.answer("💵 أرسل المبلغ المراد إضافته (مثال: `5.00`):")
-
-@dp.message(States.waiting_for_add_balance_amount)
-async def proc_add_balance_amount(message: Message, state: FSMContext):
-    try:
-        amount = float(message.text.strip().replace("$", ""))
-    except ValueError:
-        await message.answer("❌ أدخل مبلغاً صحيحاً:")
-        return
-    data = await state.get_data()
-    uid = data["target_user"]
-    await state.clear()
-    user = await get_user(uid)
-    await update_user(uid, {"balance": user.get("balance", 0.0) + amount})
-    await message.answer(f"✅ تمت إضافة `${amount:.2f}` إلى حساب المستخدم (`{uid}`) بنجاح.")
-
-@dp.callback_query(F.data == "admin_deduct_balance")
-async def admin_deduct_balance_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    await state.set_state(States.waiting_for_deduct_balance_id)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("➖ أرسل آي دي (ID) المستخدم لخصم رصيد منه:", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_deduct_balance_id)
-async def proc_deduct_balance_id(message: Message, state: FSMContext):
-    try:
-        uid = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ أدخل آي دي صحيح:")
-        return
-    await state.update_data(target_user=uid)
-    await state.set_state(States.waiting_for_deduct_balance_amount)
-    await message.answer("💵 أرسل المبلغ المراد خصمه:")
-
-@dp.message(States.waiting_for_deduct_balance_amount)
-async def proc_deduct_balance_amount(message: Message, state: FSMContext):
-    try:
-        amount = float(message.text.strip().replace("$", ""))
-    except ValueError:
-        await message.answer("❌ أدخل مبلغاً صحيحاً:")
-        return
-    data = await state.get_data()
-    uid = data["target_user"]
-    await state.clear()
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (uid,))
-    row = cursor.fetchone()
-    conn.close()
-
-    if row:
-        new_bal = max(0.0, row[0] - amount)
-        await update_user(uid, {"balance": new_bal})
-        await message.answer(f"✅ تم خصم `${amount:.2f}` من حساب المستخدم (`{uid}`).")
-    else:
-        await message.answer("❌ المستخدم غير موجود.")
-
-@dp.callback_query(F.data == "admin_set_balance")
-async def admin_set_balance_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    await state.set_state(States.waiting_for_set_balance_id)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("🎯 أرسل آي دي (ID) المستخدم لتعيين رصيد له:", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_set_balance_id)
-async def proc_set_balance_id(message: Message, state: FSMContext):
-    try:
-        uid = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ أدخل آي دي صحيح:")
-        return
-    await state.update_data(target_user=uid)
-    await state.set_state(States.waiting_for_set_balance_amount)
-    await message.answer("💵 أرسل الرصيد الجديد كاملاً:")
-
-@dp.message(States.waiting_for_set_balance_amount)
-async def proc_set_balance_amount(message: Message, state: FSMContext):
-    try:
-        amount = float(message.text.strip().replace("$", ""))
-    except ValueError:
-        await message.answer("❌ أدخل رقماً صحيحاً:")
-        return
-    data = await state.get_data()
-    uid = data["target_user"]
-    await state.clear()
-    await update_user(uid, {"balance": amount})
-    await message.answer(f"✅ تم تعيين رصيد المستخدم (`{uid}`) ليصبح `${amount:.2f}`.")
-
-@dp.callback_query(F.data == "admin_check_user")
-async def admin_check_user_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    await state.set_state(States.waiting_for_check_user_id)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-    await callback.message.edit_text("🔍 أرسل آي دي (ID) المستخدم للاستعلام عنه:", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_check_user_id)
-async def proc_check_user(message: Message, state: FSMContext):
-    try:
-        uid = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ أدخل آي دي صحيح:")
-        return
-    await state.clear()
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, balance, language, banned FROM users WHERE user_id = ?", (uid,))
-    row = cursor.fetchone()
-    conn.close()
-
-    if not row:
-        await message.answer("❌ هذا المستخدم غير مسجل في البوت.")
-        return
-    
-    text = (
-        f"👤 **معلومات المستخدم:**\n\n"
-        f"🆔 الآي دي: `{row[0]}`\n"
-        f"💵 الرصيد: `${row[1]:.2f}`\n"
-        f"🌐 اللغة: `{row[2]}`\n"
-        f"🚫 محظور: `{'نعم' if row[3] else 'لا'}`"
-    )
-    await message.answer(text, parse_mode="Markdown")
+    await callback.answer("✅ تم حذف الزر بنجاح!", show_alert=True)
+    await admin_manage_buttons(callback)
 
 # =====================================================================
-# 📱 [خطوات إضافة الرقم وتحديد القسم والتفاصيل]
+# 📱 [خطوات إضافة الرقم وتحديد القسم المأخوذ ديناميكياً]
 # =====================================================================
 
 @dp.callback_query(F.data == "admin_auto_add_num")
@@ -970,9 +550,15 @@ async def admin_auto_add_num(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
         return
     
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM shop_sections")
+    sections = cursor.fetchall()
+    conn.close()
+
     keyboard_buttons = []
-    for sec in MAIN_SECTIONS:
-        keyboard_buttons.append([InlineKeyboardButton(text=f"📁 {sec}", callback_data=f"sec_{sec}")])
+    for sec in sections:
+        keyboard_buttons.append([InlineKeyboardButton(text=f"📁 {sec[0]}", callback_data=f"sec_{sec[0]}")])
     keyboard_buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
     
     await callback.message.edit_text("📁 اختر القسم المناسب لإضافة الرقم إليه:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons))
@@ -1014,7 +600,6 @@ async def proc_auto_price(message: Message, state: FSMContext):
         await message.answer("❌ أدخل سعراً صحيحاً:")
         return
     await state.update_data(num_price=price)
-    
     await state.set_state(States.waiting_for_auto_api_combo)
     await message.answer("🔑 أرسل **API_ID** و **API_HASH** معاً مفصولين بنقطتين (مثال:\n`39585443:ad1eb1cdc57ef6913c531da5e4163256`):")
 
@@ -1022,7 +607,7 @@ async def proc_auto_price(message: Message, state: FSMContext):
 async def proc_auto_api_combo(message: Message, state: FSMContext):
     text = message.text.strip()
     if ":" not in text:
-        await message.answer("❌ الصيغة غير صحيحة. يجب أن تكون بالشكل:\n`API_ID:API_HASH`\nأعد الإرسال:")
+        await message.answer("❌ الصيغة غير صحيحة. أعد الإرسال بالشكل `API_ID:API_HASH`:")
         return
     parts = text.split(":", 1)
     try:
@@ -1053,7 +638,7 @@ async def proc_auto_phone(message: Message, state: FSMContext):
         await message.answer("📥 تم إرسال الكود بنجاح، أرسل الآن:")
     except Exception as e:
         await state.clear()
-        await message.answer(f"❌ حدث خطأ في البيانات:\n`{str(e)}`\n\nأعد المحاولة من لوحة التحكم.")
+        await message.answer(f"❌ حدث خطأ في البيانات:\n`{str(e)}`")
 
 @dp.message(States.waiting_for_auto_code)
 async def proc_auto_code(message: Message, state: FSMContext):
@@ -1077,12 +662,12 @@ async def proc_auto_code(message: Message, state: FSMContext):
         conn.close()
 
         await state.clear()
-        await message.answer("✅ تم إضافة الرقم وتفعليه بنجاح ضمن القسم والتفاصيل المحددة!")
+        await message.answer("✅ تم إضافة الرقم وتفعليه بنجاح ضمن القسم المحدد!")
     except SessionPasswordNeededError:
         await state.set_state(States.waiting_for_auto_password)
         await message.answer("🔐 الحساب محمي بكلمة مرور (تحقق بخطوتين)، أرسلها الآن:")
     except Exception as e:
-        await message.answer(f"❌ الكود غير صحيح أو حدث خطأ: `{str(e)}`\n\nأعد إرسال الكود الصحيح:")
+        await message.answer(f"❌ الكود غير صحيح أو حدث خطأ: `{str(e)}`\nأعد إرسال الكود:")
 
 @dp.message(States.waiting_for_auto_password)
 async def proc_auto_password(message: Message, state: FSMContext):
@@ -1111,101 +696,8 @@ async def proc_auto_password(message: Message, state: FSMContext):
         await state.clear()
         await message.answer(f"❌ خطأ: `{str(e)}`")
 
-@dp.callback_query(F.data == "admin_manage_nums")
-async def admin_manage_nums_handler(callback: CallbackQuery):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT num_id, section, country FROM numbers")
-    numbers_list = cursor.fetchall()
-    conn.close()
-    
-    if not numbers_list:
-        back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
-        await callback.message.edit_text("📭 لا توجد أرقام مضافة حالياً.", reply_markup=back_kb)
-        await callback.answer()
-        return
-
-    buttons = []
-    for num in numbers_list:
-        num_id, sec, cntry = num[0], num[1], num[2]
-        buttons.append([
-            InlineKeyboardButton(text=f"🗑 [{sec}] {cntry}", callback_data=f"del_num_{num_id}"),
-            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num_id}")
-        ])
-    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
-    await callback.message.edit_text("⚙️ **إدارة الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("edit_num_"))
-async def edit_number_prompt(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    num_id = callback.data.replace("edit_num_", "")
-    await state.update_data(editing_num_id=num_id)
-    await state.set_state(States.waiting_for_edit_name)
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_manage_nums")]])
-    await callback.message.edit_text("✍️ أرسل التفاصيل الجديدة (مثال: `هندي انشاء 2022 🇮🇳`):", reply_markup=back_kb)
-    await callback.answer()
-
-@dp.message(States.waiting_for_edit_name)
-async def proc_edit_name(message: Message, state: FSMContext):
-    await state.update_data(new_country=message.text.strip())
-    await state.set_state(States.waiting_for_edit_price)
-    await message.answer("💵 أرسل السعر الجديد بالدولار (مثال: `2.00`):")
-
-@dp.message(States.waiting_for_edit_price)
-async def proc_edit_price(message: Message, state: FSMContext):
-    try:
-        new_price = float(message.text.strip().replace("$", ""))
-    except ValueError:
-        await message.answer("❌ أدخل سعراً صحيحاً:")
-        return
-    
-    data = await state.get_data()
-    num_id = data["editing_num_id"]
-    new_country = data["new_country"]
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE numbers SET country = ?, price = ? WHERE num_id = ?", (new_country, new_price, num_id))
-    conn.commit()
-    conn.close()
-            
-    await state.clear()
-    await message.answer("✅ تم تعديل بيانات الرقم بنجاح!")
-
-@dp.callback_query(F.data.startswith("del_num_"))
-async def delete_number_handler(callback: CallbackQuery):
-    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
-        return
-    num_id = callback.data.replace("del_num_", "")
-    
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM numbers WHERE num_id = ?", (num_id,))
-    conn.commit()
-    
-    cursor.execute("SELECT num_id, section, country FROM numbers")
-    numbers_list = cursor.fetchall()
-    conn.close()
-    
-    await callback.answer("✅ تم حذف الرقم بنجاح!", show_alert=True)
-    
-    buttons = []
-    if numbers_list:
-        for num in numbers_list:
-            buttons.append([
-                InlineKeyboardButton(text=f"🗑 [{num[1]}] {num[2]}", callback_data=f"del_num_{num[0]}"),
-                InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num[0]}")
-            ])
-    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
-    await callback.message.edit_text("⚙️ **إدارة الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-
 # =====================================================================
-# 🛒 [قسم متجر الأرقام والشراء الفوري وجلب الـ OTP]
+# 🛒 [قسم متجر الأرقام، الشراء، الـ OTP، الهدية، والتحويل]
 # =====================================================================
 
 @dp.callback_query(F.data == "buy_number_menu")
@@ -1216,9 +708,15 @@ async def buy_number_menu_handler(callback: CallbackQuery):
         await callback.answer("❌ أنت محظور.", show_alert=True)
         return
 
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM shop_sections")
+    sections = cursor.fetchall()
+    conn.close()
+
     keyboard_buttons = []
-    for sec in MAIN_SECTIONS:
-        keyboard_buttons.append([InlineKeyboardButton(text=f"📁 {sec}", callback_data=f"shop_sec_{sec}")])
+    for sec in sections:
+        keyboard_buttons.append([InlineKeyboardButton(text=f"📁 {sec[0]}", callback_data=f"shop_sec_{sec[0]}")])
     keyboard_buttons.append([InlineKeyboardButton(text="🛍 أرقامي المشتراة", callback_data="my_purchased_numbers")])
     keyboard_buttons.append([InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")])
 
@@ -1239,10 +737,9 @@ async def shop_section_handler(callback: CallbackQuery):
     keyboard_buttons = []
     if nums:
         for num in nums:
-            num_id, country, price = num[0], num[1], num[2]
-            keyboard_buttons.append([InlineKeyboardButton(text=f"{country} — ${price:.2f}", callback_data=f"buy_item_{num_id}")])
+            keyboard_buttons.append([InlineKeyboardButton(text=f"{num[1]} — ${num[2]:.2f}", callback_data=f"buy_item_{num[0]}")])
     else:
-        keyboard_buttons.append([InlineKeyboardButton(text="❌ لا توجد أرقام متاحة حالياً في هذا القسم", callback_data="buy_number_menu")])
+        keyboard_buttons.append([InlineKeyboardButton(text="❌ لا توجد أرقام متاحة في هذا القسم حالياً", callback_data="buy_number_menu")])
 
     keyboard_buttons.append([InlineKeyboardButton(text="🔙 رجوع للأقسام", callback_data="buy_number_menu")])
     
@@ -1252,10 +749,9 @@ async def shop_section_handler(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("buy_item_"))
 async def buy_item_confirmation(callback: CallbackQuery):
     num_id = callback.data.replace("buy_item_", "")
-    
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT num_id, section, country, price, phone FROM numbers WHERE num_id = ?", (num_id,))
+    cursor.execute("SELECT country, price FROM numbers WHERE num_id = ?", (num_id,))
     item = cursor.fetchone()
     conn.close()
 
@@ -1263,19 +759,11 @@ async def buy_item_confirmation(callback: CallbackQuery):
         await callback.answer("❌ عذراً، هذا الرقم تم بيعه أو لم يعد متوفراً!", show_alert=True)
         return
 
-    country, price = item[2], item[3]
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ تأكيد الشراء", callback_data=f"confirm_buy_{num_id}")],
         [InlineKeyboardButton(text="❌ إلغاء", callback_data="buy_number_menu")]
     ])
-    
-    text = (
-        f"🛒 **تأكيد عملية الشراء:**\n\n"
-        f"• الدولة والتفاصيل: `{country}`\n"
-        f"• السعر المطلوب: `${price:.2f}`\n\n"
-        f"هل أنت متأكد من رغبتك في إتمام عملية الشراء؟"
-    )
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(f"🛒 **تأكيد الشراء:**\n\n• التفاصيل: `{item[0]}`\n• السعر: `${item[1]:.2f}`", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("confirm_buy_"))
@@ -1295,28 +783,16 @@ async def execute_purchase(callback: CallbackQuery):
 
     price = item[3]
     user = await get_user(user_id)
-    balance = user.get("balance", 0.0)
-
-    if balance < price:
-        await callback.answer("❌ رصيدك غير كافي لإتمام عملية الشراء. قم بشحن رصيدك أولاً!", show_alert=True)
+    if user.get("balance", 0.0) < price:
+        await callback.answer("❌ رصيدك غير كافي لإتمام الشراء!", show_alert=True)
         return
 
-    new_balance = balance - price
-    await update_user(user_id, {"balance": new_balance})
+    await update_user(user_id, {"balance": user.get("balance", 0.0) - price})
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM numbers WHERE num_id = ?", (num_id,))
-    num_data_json = json.dumps({
-        "num_id": item[0],
-        "section": item[1],
-        "country": item[2],
-        "price": item[3],
-        "phone": item[4],
-        "session": item[5],
-        "api_id": item[6],
-        "api_hash": item[7]
-    })
+    num_data_json = json.dumps({"num_id": item[0], "section": item[1], "country": item[2], "price": item[3], "phone": item[4], "session": item[5], "api_id": item[6], "api_hash": item[7]})
     cursor.execute("INSERT INTO purchases (user_id, number_id, num_data) VALUES (?, ?, ?)", (user_id, num_id, num_data_json))
     conn.commit()
     conn.close()
@@ -1325,15 +801,7 @@ async def execute_purchase(callback: CallbackQuery):
         [InlineKeyboardButton(text="📦 أرقامي المشتراة", callback_data="my_purchased_numbers")],
         [InlineKeyboardButton(text="🏠 الرئيسية", callback_data="main_menu")]
     ])
-    
-    text = (
-        f"🎉 **تمت عملية الشراء بنجاح!**\n\n"
-        f"📱 الرقم: `{item[4]}`\n"
-        f"🌍 الدولة: `{item[2]}`\n"
-        f"💵 السعر المدفوع: `${price:.2f}`\n\n"
-        f"يمكنك الانتقال إلى قسم (أرقامي المشتراة) لعرض الجلسة أو طلب كود التحقق (OTP) في أي وقت."
-    )
-    await callback.message.edit_text(text, reply_markup=success_kb, parse_mode="Markdown")
+    await callback.message.edit_text(f"🎉 **تمت عملية الشراء بنجاح!**\n\n📱 الرقم: `{item[4]}`\n🌍 الدولة: `{item[2]}`\n💵 السعر: `${price:.2f}`", reply_markup=success_kb, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "my_purchased_numbers")
@@ -1353,19 +821,17 @@ async def my_purchased_numbers_handler(callback: CallbackQuery):
 
     buttons = []
     for row in rows:
-        p_id = row[0]
         data = json.loads(row[1])
-        buttons.append([InlineKeyboardButton(text=f"📱 {data['country']} ({data['phone']})", callback_data=f"manage_purchased_{p_id}")])
+        buttons.append([InlineKeyboardButton(text=f"📱 {data['country']} ({data['phone']})", callback_data=f"manage_purchased_{row[0]}")])
     
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="buy_number_menu")])
-    await callback.message.edit_text("📦 **سجل أرقامك المشتراة:**\n\nاختر الرقم لعرض تفاصيله أو طلب كود التحقق:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("📦 **سجل أرقامك المشتراة:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("manage_purchased_"))
 async def manage_purchased_item(callback: CallbackQuery):
     user_id = callback.from_user.id
     p_id = int(callback.data.replace("manage_purchased_", ""))
-
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT num_data FROM purchases WHERE id = ? AND user_id = ?", (p_id, user_id))
@@ -1373,51 +839,36 @@ async def manage_purchased_item(callback: CallbackQuery):
     conn.close()
 
     if not row:
-        await callback.answer("❌ الرقم غير موجود أو لا تملكه.", show_alert=True)
+        await callback.answer("❌ الرقم غير موجود.", show_alert=True)
         return
 
     data = json.loads(row[0])
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 طلب كود التحقق (OTP)", callback_data=f"get_otp_{p_id}")],
-        [InlineKeyboardButton(text="📋 نسخ كود الجلسة (StringSession)", callback_data=f"get_sess_{p_id}")],
+        [InlineKeyboardButton(text="📋 نسخ كود الجلسة", callback_data=f"get_sess_{p_id}")],
         [InlineKeyboardButton(text="🔙 أرقامي المشتراة", callback_data="my_purchased_numbers")]
     ])
-
-    text = (
-        f"📱 **تفاصيل الرقم المشتراة:**\n\n"
-        f"• الدولة: `{data['country']}`\n"
-        f"• الهاتف: `{data['phone']}`\n"
-        f"• API ID: `{data['api_id']}`\n"
-        f"• API Hash: `{data['api_hash']}`"
-    )
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(f"📱 **تفاصيل الرقم:**\n• الدولة: `{data['country']}`\n• الهاتف: `{data['phone']}`", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("get_sess_"))
 async def get_session_string(callback: CallbackQuery):
     user_id = callback.from_user.id
     p_id = int(callback.data.replace("get_sess_", ""))
-
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT num_data FROM purchases WHERE id = ? AND user_id = ?", (p_id, user_id))
     row = cursor.fetchone()
     conn.close()
-
-    if not row:
-        await callback.answer("❌ خطأ.", show_alert=True)
-        return
-
-    data = json.loads(row[0])
-    session_str = data['session']
-    await callback.message.answer(f"📋 **كود الجلسة (StringSession) الخاص بك:**\n\n`{session_str}`", parse_mode="Markdown")
-    await callback.answer("تم إرسال كود الجلسة في رسالة منفصلة!")
+    if row:
+        data = json.loads(row[0])
+        await callback.message.answer(f"📋 **كود الجلسة:**\n\n`{data['session']}`", parse_mode="Markdown")
+    await callback.answer()
 
 @dp.callback_query(F.data.startswith("get_otp_"))
 async def get_otp_code(callback: CallbackQuery):
     user_id = callback.from_user.id
     p_id = int(callback.data.replace("get_otp_", ""))
-
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT num_data FROM purchases WHERE id = ? AND user_id = ?", (p_id, user_id))
@@ -1429,12 +880,11 @@ async def get_otp_code(callback: CallbackQuery):
         return
 
     data = json.loads(row[0])
-    await callback.answer("⏳ جاري فحص الرسائل الأخيرة لتليجرام واستخراج كود التحقق...", show_alert=True)
+    await callback.answer("⏳ جاري فحص رسائل تليجرام...", show_alert=True)
 
     try:
         client = TelegramClient(StringSession(data['session']), data['api_id'], data['api_hash'])
         await client.connect()
-        
         messages = await client.get_messages(777000, limit=3)
         await client.disconnect()
 
@@ -1444,37 +894,291 @@ async def get_otp_code(callback: CallbackQuery):
             if match:
                 otp_found = match.group(1)
                 break
-            match_alt = re.search(r'code[:\s]+(\d+)', msg.message, re.IGNORECASE)
-            if match_alt:
-                otp_found = match_alt.group(1)
-                break
 
         if otp_found:
-            await callback.message.answer(f"✅ **كود التحقق (OTP) الأخير للرقم `{data['phone']}` هو:**\n\n`{otp_found}`", parse_mode="Markdown")
+            await callback.message.answer(f"✅ **كود التحقق (OTP):**\n\n`{otp_found}`", parse_mode="Markdown")
         else:
-            client2 = TelegramClient(StringSession(data['session']), data['api_id'], data['api_hash'])
-            await client2.connect()
-            dialogs = await client2.get_dialogs(limit=5)
-            latest_msg_text = ""
-            for d in dialogs:
-                msgs = await client2.get_messages(d.entity, limit=1)
-                if msgs:
-                    latest_msg_text += f"\n- من ({d.name}): {msgs[0].message[:100]}"
-            await client2.disconnect()
-            
-            await callback.message.answer(
-                f"⚠️ لم يتم العثور على رسالة كود صريحة من تليجرام.\n"
-                f"آخر النشاطات في الحساب:{latest_msg_text}"
-            )
+            await callback.message.answer("⚠️ لم يتم العثور على رسالة كود صريحة حالياً.")
     except Exception as e:
-        await callback.message.answer(f"❌ حدث خطأ أثناء الاتصال بالجلسة وجلب الكود:\n`{str(e)}`")
+        await callback.message.answer(f"❌ خطأ بالاتصال بالجلسة: `{str(e)}`")
+
+# حسابي والهدية والتحويل والشحن
+@dp.callback_query(F.data == "my_account")
+async def my_account_handler(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    user = await get_user(user_id)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM purchases WHERE user_id = ?", (user_id,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
+    await callback.message.edit_text(f"⚡ **حسابك:**\n🆔 المعرف: `{user_id}`\n💵 الرصيد: `${user.get('balance', 0.0):.2f}`\n🛒 المشتريات: `{count}`", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data == "claim_bonus")
+async def claim_bonus_handler(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    user = await get_user(user_id)
+    now = datetime.utcnow()
+    last_claim = user.get("last_claim")
+    if last_claim and (now - last_claim) < timedelta(hours=24):
+        await callback.answer("⏳ لقد حصلت على الهدية مسبقاً اليوم.", show_alert=True)
+        return
+
+    bonus = float(get_config_val("bonus_amount", "0.01"))
+    await update_user(user_id, {"balance": user.get("balance", 0.0) + bonus, "last_claim": now})
+    await callback.answer(f"🎁 مبروك! حصلت على هدية بقيمة ${bonus} بنجاح.", show_alert=True)
+    await main_menu_callback(callback, None)
+
+@dp.callback_query(F.data == "recharge_menu")
+async def recharge_menu_handler(callback: CallbackQuery, state: FSMContext):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⭐ شحن عبر نجوم تليجرام", callback_data="recharge_stars_flow")],
+        [InlineKeyboardButton(text="💎 شحن عبر عملة TON", callback_data="recharge_ton_flow")],
+        [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
+    ])
+    await callback.message.edit_text("💳 **قائمة شحن الرصيد:**", reply_markup=keyboard)
+    await callback.answer()
+
+@dp.callback_query(F.data == "recharge_stars_flow")
+async def recharge_stars_flow(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(States.waiting_for_stars_count)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="recharge_menu")]])
+    await callback.message.edit_text("⭐ أرسل عدد النجوم التي تريد شحنها:", reply_markup=keyboard)
+    await callback.answer()
+
+@dp.message(States.waiting_for_stars_count)
+async def process_stars_invoice(message: Message, state: FSMContext):
+    try:
+        count = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ أدخل رقماً صحيحاً:")
+        return
+    await state.clear()
+    star_price = float(get_config_val("star_price", "0.01"))
+    total_cents = max(1, int(count * star_price * 100))
+    prices = [LabeledPrice(label=f"{count} Stars", amount=total_cents)]
+    await message.bot.send_invoice(
+        chat_id=message.chat.id, title="شحن نجوم", description=f"شحن {count} نجمة",
+        payload=f"stars_pay_{count}", currency="XTR", prices=prices
+    )
+
+@dp.callback_query(F.data == "recharge_ton_flow")
+async def recharge_ton_flow(callback: CallbackQuery, state: FSMContext):
+    wallet = get_config_val("ton_wallet", "")
+    ton_pr = get_config_val("ton_price", "1.35")
+    support = get_config_val("support_username", "aaysam")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="recharge_menu")]])
+    await callback.message.edit_text(f"💎 **شحن TON:**\nمحفظة التحويل:\n`{wallet}`\nسعر التون: `${ton_pr}`\nراسل الدعم لتأكيد الشوال: @{support}", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.answer()
+
+@dp.pre_checkout_query()
+async def pre_checkout_handler(query: PreCheckoutQuery):
+    await query.answer(ok=True)
+
+@dp.message(F.successful_payment)
+async def successful_payment_handler(message: Message):
+    payload = message.successful_payment.invoice_payload
+    if payload.startswith("stars_pay_"):
+        count = int(payload.replace("stars_pay_", ""))
+        star_price = float(get_config_val("star_price", "0.01"))
+        added = count * star_price
+        user_id = message.from_user.id
+        user = await get_user(user_id)
+        await update_user(user_id, {"balance": user.get("balance", 0.0) + added})
+        await message.answer(f"✅ تم الشحن بنجاح وإضافة `${added:.2f}` لرصيدك.")
+
+@dp.callback_query(F.data == "transfer_menu")
+async def transfer_menu_handler(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(States.waiting_for_transfer_id)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]])
+    await callback.message.edit_text("💳 أرسل آي دي (ID) المستخدم للتحويل إليه:", reply_markup=keyboard)
+    await callback.answer()
+
+@dp.message(States.waiting_for_transfer_id)
+async def process_transfer_id(message: Message, state: FSMContext):
+    try:
+        target_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ آي دي غير صحيح:")
+        return
+    await state.update_data(transfer_id=target_id)
+    await state.set_state(States.waiting_for_transfer_amount)
+    await message.answer("💵 أرسل المبلغ المراد تحويله:")
+
+@dp.message(States.waiting_for_transfer_amount)
+async def process_transfer_amount(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.strip().replace("$", ""))
+    except ValueError:
+        await message.answer("❌ مبلغ غير صحيح:")
+        return
+    sender_id = message.from_user.id
+    sender = await get_user(sender_id)
+    if sender.get("balance", 0.0) < amount:
+        await message.answer("❌ رصيدك غير كافي:")
+        await state.clear()
+        return
+    data = await state.get_data()
+    target_id = data["transfer_id"]
+    target = await get_user(target_id)
+    
+    await update_user(sender_id, {"balance": sender.get("balance", 0.0) - amount})
+    await update_user(target_id, {"balance": target.get("balance", 0.0) + amount})
+    await state.clear()
+    await message.answer(f"✅ تم تحويل `${amount:.2f}` بنجاح!")
+
+# إدارة الأرقام وحظر المستخدمين من لوحة التحكم
+@dp.callback_query(F.data == "admin_manage_nums")
+async def admin_manage_nums_handler(callback: CallbackQuery):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_id, section, country FROM numbers")
+    nums = cursor.fetchall()
+    conn.close()
+
+    if not nums:
+        back = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+        await callback.message.edit_text("📭 لا توجد أرقام مضافة.", reply_markup=back)
+        await callback.answer()
+        return
+
+    buttons = []
+    for num in nums:
+        buttons.append([InlineKeyboardButton(text=f"🗑 [{num[1]}] {num[2]}", callback_data=f"del_num_{num[0]}")])
+    buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
+    await callback.message.edit_text("⚙️ **إدارة وحذف الأرقام:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("del_num_"))
+async def delete_number_handler(callback: CallbackQuery):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    num_id = callback.data.replace("del_num_", "")
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM numbers WHERE num_id = ?", (num_id,))
+    conn.commit()
+    conn.close()
+    await callback.answer("✅ تم حذف الرقم بنجاح!", show_alert=True)
+    await admin_manage_nums_handler(callback)
+
+@dp.callback_query(F.data == "admin_stats")
+async def admin_stats(callback: CallbackQuery):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    u_count = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM numbers")
+    n_count = cursor.fetchone()[0]
+    conn.close()
+    back = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text(f"📊 **إحصائيات البوت:**\n👥 المستخدمين: `{u_count}`\n📱 الأرقام المتاحة: `{n_count}`", reply_markup=back, parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_broadcast")
+async def admin_broadcast_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_broadcast_msg)
+    back = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")]])
+    await callback.message.edit_text("📢 أرسل رسالة الإذاعة:", reply_markup=back)
+    await callback.answer()
+
+@dp.message(States.waiting_for_broadcast_msg)
+async def execute_broadcast(message: Message, state: FSMContext):
+    txt = message.text
+    await state.clear()
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    users = cursor.fetchall()
+    conn.close()
+    count = 0
+    for u in users:
+        try:
+            await bot.send_message(u[0], txt)
+            count += 1
+            await asyncio.sleep(0.02)
+        except Exception:
+            pass
+    await message.answer(f"✅ تمت الإذاعة إلى `{count}` مستخدم.")
+
+# الحظر وإدارة الأرصدة وسعر النجمة من لوحة التحكم
+@dp.callback_query(F.data == "admin_ban_user")
+async def ban_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_ban_id)
+    await callback.message.edit_text("🚫 أرسل آي دي (ID) المستخدم للحظر:")
+    await callback.answer()
+
+@dp.message(States.waiting_for_ban_id)
+async def ban_exec(message: Message, state: FSMContext):
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        return await message.answer("آي دي خطأ:")
+    await state.clear()
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET banned = 1 WHERE user_id = ?", (uid,))
+    conn.commit()
+    conn.close()
+    await message.answer(f"✅ تم حظر المستخدم (`{uid}`).")
+
+@dp.callback_query(F.data == "admin_unban_user")
+async def unban_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_unban_id)
+    await callback.message.edit_text("✅ أرسل آي دي (ID) المستخدم لرفع الحظر:")
+    await callback.answer()
+
+@dp.message(States.waiting_for_unban_id)
+async def unban_exec(message: Message, state: FSMContext):
+    try:
+        uid = int(message.text.strip())
+    except ValueError:
+        return await message.answer("آي دي خطأ:")
+    await state.clear()
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET banned = 0 WHERE user_id = ?", (uid,))
+    conn.commit()
+    conn.close()
+    await message.answer(f"✅ تم رفع الحظر عن المستخدم (`{uid}`).")
+
+@dp.callback_query(F.data == "admin_change_star_price")
+async def star_price_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    await state.set_state(States.waiting_for_star_price)
+    await callback.message.edit_text("⭐ أرسل السعر الجديد للنجمة الواحدة بالدولار (مثال: `0.02`):")
+    await callback.answer()
+
+@dp.message(States.waiting_for_star_price)
+async def star_price_exec(message: Message, state: FSMContext):
+    try:
+        val = float(message.text.strip().replace("$", ""))
+    except ValueError:
+        return await message.answer("قيمة خطأ:")
+    set_config_val("star_price", val)
+    await state.clear()
+    await message.answer(f"✅ تم تحديث سعر النجمة إلى: `{val}`")
 
 # =====================================================================
 # 🏁 [تشغيل البوت الأساسي]
 # =====================================================================
 
 async def main():
-    print("🚀 Bot is starting and running successfully with SQLite DB...")
+    print("🚀 Bot is running completely dynamic with SQLite DB...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
