@@ -68,6 +68,9 @@ class States(StatesGroup):
     waiting_for_auto_code = State()
     waiting_for_auto_password = State()
 
+    waiting_for_edit_name = State()
+    waiting_for_edit_price = State()
+
     waiting_for_btn_name = State()
     waiting_for_btn_url = State()
 
@@ -239,7 +242,7 @@ async def admin_panel_handler(event, state: FSMContext = None):
 
     builder = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ إضافة رقم تليجرام جديد", callback_data="admin_auto_add_num")],
-        [InlineKeyboardButton(text="✏️ إدارة الأرقام الحالية", callback_data="admin_manage_nums")],
+        [InlineKeyboardButton(text="✏️ إدارة وتعديل الأرقام الحالية", callback_data="admin_manage_nums")],
         [InlineKeyboardButton(text="🔘 إدارة الأزرار الإضافية", callback_data="admin_manage_buttons")],
         [InlineKeyboardButton(text="👥 إحصائيات البوت والمستخدمين", callback_data="admin_stats")],
         [InlineKeyboardButton(text="📢 إذاعة رسالة للجميع", callback_data="admin_broadcast")],
@@ -804,7 +807,6 @@ async def proc_auto_phone(message: Message, state: FSMContext):
 
 @dp.message(States.waiting_for_auto_code)
 async def proc_auto_code(message: Message, state: FSMContext):
-    # تنظيف الكود وإزالة أي مسافات أو رموز غير مرغوب فيها
     code = re.sub(r'\D', '', message.text.strip())
     data = await state.get_data()
     try:
@@ -867,10 +869,52 @@ async def admin_manage_nums_handler(callback: CallbackQuery):
 
     buttons = []
     for num in MEMORY_NUMBERS:
-        buttons.append([InlineKeyboardButton(text=f"🗑 حذف: {num['name']} ({num['phone']})", callback_data=f"del_num_{num['num_id']}")])
+        buttons.append([
+            InlineKeyboardButton(text=f"🗑 {num['name']} ({num['phone']})", callback_data=f"del_num_{num['num_id']}"),
+            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num['num_id']}")
+        ])
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
-    await callback.message.edit_text("⚙️ اختر الرقم الذي تريد حذفه:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("⚙️ **إدارة الأرقام (حذف أو تعديل الاسم والسعر):**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
+
+@dp.callback_query(F.data.startswith("edit_num_"))
+async def edit_number_prompt(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != DEFAULT_ADMIN_USER_ID:
+        return
+    num_id = callback.data.replace("edit_num_", "")
+    await state.update_data(editing_num_id=num_id)
+    await state.set_state(States.waiting_for_edit_name)
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_manage_nums")]])
+    await callback.message.edit_text("🏷 أرسل الاسم الجديد للرقم والدولة (مثال: `🇺🇸 أمريكا مميز`):", reply_markup=back_kb)
+    await callback.answer()
+
+@dp.message(States.waiting_for_edit_name)
+async def proc_edit_name(message: Message, state: FSMContext):
+    await state.update_data(new_name=message.text.strip())
+    await state.set_state(States.waiting_for_edit_price)
+    await message.answer("💵 أرسل السعر الجديد بالدولار (مثال: `2.00`):")
+
+@dp.message(States.waiting_for_edit_price)
+async def proc_edit_price(message: Message, state: FSMContext):
+    try:
+        new_price = float(message.text.strip().replace("$", ""))
+    except ValueError:
+        await message.answer("❌ أدخل سعراً صحيحاً:")
+        return
+    
+    data = await state.get_data()
+    num_id = data["editing_num_id"]
+    new_name = data["new_name"]
+    
+    global MEMORY_NUMBERS
+    for num in MEMORY_NUMBERS:
+        if num["num_id"] == num_id:
+            num["name"] = new_name
+            num["price"] = new_price
+            break
+            
+    await state.clear()
+    await message.answer("✅ تم تعديل اسم وسعر الرقم بنجاح!")
 
 @dp.callback_query(F.data.startswith("del_num_"))
 async def delete_number_handler(callback: CallbackQuery):
@@ -888,9 +932,12 @@ async def delete_number_handler(callback: CallbackQuery):
 
     buttons = []
     for num in MEMORY_NUMBERS:
-        buttons.append([InlineKeyboardButton(text=f"🗑 حذف: {num['name']} ({num['phone']})", callback_data=f"del_num_{num['num_id']}")])
+        buttons.append([
+            InlineKeyboardButton(text=f"🗑 {num['name']} ({num['phone']})", callback_data=f"del_num_{num['num_id']}"),
+            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"edit_num_{num['num_id']}")
+        ])
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="admin_panel_main")])
-    await callback.message.edit_text("⚙️ اختر الرقم الذي تريد حذفه:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text("⚙️ **إدارة الأرقام (حذف أو تعديل الاسم والسعر):**", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 @dp.callback_query(F.data == "buy_number_menu")
 async def buy_number_menu(callback: CallbackQuery):
@@ -900,20 +947,29 @@ async def buy_number_menu(callback: CallbackQuery):
         await callback.answer()
         return
 
+    # تجميع الأرقام حسب الاسم والسعر لتظهر كخيار موحد
+    grouped_numbers = {}
+    for num in MEMORY_NUMBERS:
+        key = (num['name'], num['price'])
+        if key not in grouped_numbers:
+            grouped_numbers[key] = []
+        grouped_numbers[key].append(num['num_id'])
+
     buttons = []
-    for data in MEMORY_NUMBERS:
-        num_id = data["num_id"]
-        buttons.append([InlineKeyboardButton(text=f"{data['name']} - ${data['price']:.2f}", callback_data=f"buy_country_{num_id}")])
+    for (name, price), ids in grouped_numbers.items():
+        count = len(ids)
+        buttons.append([InlineKeyboardButton(text=f"{name} - ${price:.2f} (متاح: {count})", callback_data=f"buy_group_{ids[0]}")])
+        
     buttons.append([InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")])
     await callback.message.edit_text("🌍 اختر الدولة لشراء الرقم:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("buy_country_"))
-async def buy_country_handler(callback: CallbackQuery):
-    num_id = callback.data.replace("buy_country_", "")
+@dp.callback_query(F.data.startswith("buy_group_"))
+async def buy_group_handler(callback: CallbackQuery):
+    num_id = callback.data.replace("buy_group_", "")
     data = next((n for n in MEMORY_NUMBERS if n["num_id"] == num_id), None)
     if not data:
-        await callback.answer("❌ الرقم تم بيعه أو غير متوفر.", show_alert=True)
+        await callback.answer("❌ هذا الرقم غير متوفر حالياً.", show_alert=True)
         return
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"تأكيد الشراء مقابل ${data['price']:.2f}", callback_data=f"buy_balance_{num_id}")],
@@ -964,12 +1020,12 @@ async def get_otp_callback_fixed(callback: CallbackQuery):
         await callback.answer("❌ عذراً، بيانات هذا الرقم غير موجودة.", show_alert=True)
         return
 
-    otp_text = await fetch_otp_async(target_num["session"], target_num["api_id"], target_num["api_hash"])
+    otp_temp_text = await fetch_otp_async(target_num["session"], target_num["api_id"], target_num["api_hash"])
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 طلب كود (OTP)", callback_data=f"get_otp_{num_id}")]
     ])
     try:
-        await callback.message.edit_text(f"📱 **الرقم:** `{target_num['phone']}`\n\n📥 **حالة الكود المحدثة:**\n{otp_text}", reply_markup=keyboard, parse_Mode="Markdown")
+        await callback.message.edit_text(f"📱 **الرقم:** `{target_num['phone']}`\n\n📥 **حالة الكود المحدثة:**\n{otp_temp_text}", reply_markup=keyboard, parse_mode="Markdown")
     except Exception:
         pass
     await callback.answer("🔄 تم تحديث الكود بنجاح!")
