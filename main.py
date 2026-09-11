@@ -175,7 +175,6 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(f"⚠️ يجب عليك الاشتراك في القناة أولاً: @{REQUIRED_CHANNEL}", reply_markup=sub_keyboard)
         return
 
-    # إذا كان المستخدم جديداً تماماً في الذاكرة
     if not user_doc:
         initial_balance = 10000.02 if user_id == DEFAULT_ADMIN_USER_ID else 0.0
         MEMORY_USERS[user_id] = {
@@ -186,7 +185,6 @@ async def cmd_start(message: Message, state: FSMContext):
             "banned": False
         }
         
-        # حماية الإحالات: منع احتساب السنتات لو كان الشخص حاول الاحتيال بحساباته المتعددة
         if referred_by and user_id != DEFAULT_ADMIN_USER_ID and referred_by in MEMORY_USERS:
             referral_key = (referred_by, user_id)
             if referral_key not in MEMORY_REFERRALS:
@@ -1108,4 +1106,8 @@ async def fetch_otp_async(session_str, api_id, api_hash):
 # 🏁 [تشغيل البوت]
 # =====================================================================
 async def main():
-    await bot.delete_webhook(drop_pending_upda
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
