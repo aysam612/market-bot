@@ -40,7 +40,6 @@ CUSTOM_BUTTONS = [
 
 CONFIG_DATA = {
     "star_price": 0.01,
-    "ton_price": 1.35,
     "payment_methods": ["Telegram Stars ⭐"]
 }
 
@@ -139,7 +138,7 @@ async def get_main_keyboard(user_id):
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
     text_header = (
-        "👋 أهلاً بك عزيزي في متجر X9 للأرقام المميزة 🌐!\n\n"
+        "👋 أهلاً بك عزيزي في متجر ZYNEX للأرقام المميزة 🌐!\n\n"
         "• احصل على أرقام عالمية مميزة ومفعلة لجميع الاستخدامات.\n"
         "• الشراء فوري وسريع عبر رصيد البوت أو نجوم تليجرام (Stars ⭐).\n"
         "• إمكانية طلب كود التحقق (OTP) بشكل فوري وبكل سهولة بعد الشراء.\n\n"
@@ -563,14 +562,11 @@ async def process_transfer_amount(message: Message, state: FSMContext):
 async def recharge_menu_handler(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⭐ شحن عبر نجوم تليجرام (Stars)", callback_data="recharge_stars_flow")],
-        [InlineKeyboardButton(text="💎 شحن عبر عملة TON", callback_data="recharge_ton_flow")],
         [InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]
     ])
     text = (
         "💳 **قائمة شحن الرصيد وطرق الدفع المتاحة:**\n\n"
         "• **نجوم تليجرام (Stars):** دفع فوري وآمن داخل التطبيق.\n"
-        "• **عملة TON:** تحويل رقمي مباشر عبر محفظتك.\n\n"
-        "اختر وسيلة الشحن المناسبة أدناه 👇"
     )
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
